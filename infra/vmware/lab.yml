@@ -44,6 +44,7 @@ nodes:
   compute1:
     hostname: compute1
     role: compute
+    nested_virtualization: true
     vcpus: 2
     memory_mb: 2560
     disks:
@@ -65,6 +66,7 @@ nodes:
   compute2:
     hostname: compute2
     role: compute
+    nested_virtualization: true
     vcpus: 2
     memory_mb: 2560
     disks:

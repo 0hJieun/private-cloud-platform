@@ -18,6 +18,9 @@ param(
 
     [switch]$AddProviderAdapter,
 
+    # VMware 위에서 KVM을 실행하는 compute 역할에만 필요하다.
+    [switch]$EnableNestedVirtualization,
+
     [string]$SourceVmx = 'C:\PrivateCloudLab\images\rocky9-base\rocky9-base.vmx',
 
     [string]$LabRoot = 'C:\PrivateCloudLab',
@@ -114,7 +117,8 @@ try {
     Set-VmxValue -Lines $vmxLines -Key 'memsize' -Value $MemoryMB
 
     # compute 노드는 VMware 위에서 KVM을 실행하므로 nested virtualization이 필요하다.
-    Set-VmxValue -Lines $vmxLines -Key 'vhv.enable' -Value 'TRUE'
+    $nestedVirtualizationValue = if ($EnableNestedVirtualization) { 'TRUE' } else { 'FALSE' }
+    Set-VmxValue -Lines $vmxLines -Key 'vhv.enable' -Value $nestedVirtualizationValue
 
     # 기반 이미지 생성에만 쓴 ISO/OEMDRV CD 장치는 복제 노드에서 비활성화한다.
     Set-VmxValue -Lines $vmxLines -Key 'sata0:0.present' -Value 'FALSE'

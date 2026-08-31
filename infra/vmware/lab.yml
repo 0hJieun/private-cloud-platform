@@ -48,10 +48,7 @@ nodes:
     memory_mb: 2560
     disks:
       - name: os
-        size_gb: 14
-        provisioning: thin
-      - name: instance-data
-        size_gb: 6
+        size_gb: 20
         provisioning: thin
     nics:
       - network: management
@@ -72,10 +69,7 @@ nodes:
     memory_mb: 2560
     disks:
       - name: os
-        size_gb: 14
-        provisioning: thin
-      - name: instance-data
-        size_gb: 6
+        size_gb: 20
         provisioning: thin
     nics:
       - network: management

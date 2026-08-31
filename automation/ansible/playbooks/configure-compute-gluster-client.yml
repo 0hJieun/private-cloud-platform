@@ -1,0 +1,86 @@
+---
+- name: compute 노드의 GlusterFS 볼륨 마운트 구성
+  hosts: compute_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    centos_extras_sig_key_url: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-Extras
+    centos_storage_sig_key_url: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-Storage
+    storage_sig_common_release_rpm_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/Packages/c/centos-release-storage-common-2-5.el9s.noarch.rpm
+    gluster_sig_release_rpm_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/Packages/c/centos-release-gluster11-1.0-1.el9s.noarch.rpm
+    gluster_volume_name: instance-volumes
+    gluster_mountpoint: /var/lib/private-cloud/volumes
+    gluster_primary_address: "{{ hostvars[groups['storage_nodes'] | first].provider_address | regex_replace('/.*$', '') }}"
+    gluster_backup_address: "{{ hostvars[groups['storage_nodes'] | last].provider_address | regex_replace('/.*$', '') }}"
+
+  tasks:
+    - name: CentOS Storage SIG 저장소 서명키 등록
+      ansible.builtin.rpm_key:
+        state: present
+        key: "{{ item }}"
+      loop:
+        - "{{ centos_extras_sig_key_url }}"
+        - "{{ centos_storage_sig_key_url }}"
+
+    - name: GlusterFS 클라이언트용 CentOS Storage SIG 저장소 등록
+      ansible.builtin.dnf:
+        name:
+          - "{{ storage_sig_common_release_rpm_url }}"
+          - "{{ gluster_sig_release_rpm_url }}"
+        state: present
+
+    # 서버와 동일한 GlusterFS 11 계열 FUSE 클라이언트를 사용한다.
+    - name: GlusterFS FUSE 클라이언트 설치
+      ansible.builtin.dnf:
+        name:
+          - glusterfs-fuse
+          - glusterfs-cli
+        state: present
+
+    - name: 인스턴스 공유 볼륨 마운트 경로 생성
+      ansible.builtin.file:
+        path: "{{ gluster_mountpoint }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # 첫 번째 volfile 서버가 응답하지 않아도 두 번째 storage 노드로 마운트를 시도한다.
+    - name: GlusterFS 볼륨의 부팅 후 자동 마운트 등록
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^.*\\s+{{ gluster_mountpoint }}\\s+.*$"
+        line: >-
+          {{ gluster_primary_address }}:/{{ gluster_volume_name }}
+          {{ gluster_mountpoint }} glusterfs
+          defaults,_netdev,backupvolfile-server={{ gluster_backup_address }} 0 0
+        state: present
+
+    - name: GlusterFS 볼륨 마운트 상태 확인
+      ansible.builtin.command:
+        argv:
+          - mountpoint
+          - -q
+          - "{{ gluster_mountpoint }}"
+      register: gluster_mount_state
+      changed_when: false
+      failed_when: gluster_mount_state.rc not in [0, 32]
+
+    - name: GlusterFS 볼륨 마운트 적용
+      ansible.builtin.command:
+        argv:
+          - mount
+          - "{{ gluster_mountpoint }}"
+      when: gluster_mount_state.rc == 32
+      changed_when: true
+
+    - name: GlusterFS 마운트 파일시스템 확인
+      ansible.builtin.command:
+        argv:
+          - findmnt
+          - -n
+          - -o
+          - FSTYPE,TARGET,SOURCE
+          - "{{ gluster_mountpoint }}"
+      changed_when: false

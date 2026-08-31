@@ -44,6 +44,8 @@ GlusterFS 볼륨은 두 storage 노드에 replica 2로 구성한다. 이는 한 
 
 `storage1(172.16.8.21)`과 `storage2(172.16.8.22)`는 provider 네트워크에서 GlusterFS trusted storage pool을 구성한다. `instance-volumes`는 두 노드의 `/srv/gluster/brick1/instances` brick을 사용하는 replica 2 볼륨이다. compute 노드는 이후 이 볼륨을 FUSE 클라이언트로 마운트해 인스턴스 qcow2 볼륨을 공유한다.
 
+compute는 `172.16.8.21`을 기본 volfile 서버로, `172.16.8.22`를 backup volfile 서버로 사용해 `/var/lib/private-cloud/volumes`에 볼륨을 마운트한다. 따라서 인스턴스 디스크는 어느 compute에서 생성하더라도 두 compute가 같은 파일을 볼 수 있다.
+
 ## Instance 생명주기
 
 ```text

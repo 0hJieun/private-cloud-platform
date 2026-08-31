@@ -1,0 +1,72 @@
+# Rocky Linux 9 기본 VMware 템플릿용 Kickstart
+# 이 파일은 Packer가 OEMDRV 보조 CD에 생성한다.
+
+text
+eula --agreed
+lang en_US.UTF-8
+keyboard --xlayouts='us'
+timezone Asia/Seoul --utc
+
+network --bootproto=static --ip=${build_ip} --netmask=${build_netmask} --hostname=${build_hostname} --device=link --activate --noipv6
+
+rootpw --lock
+firewall --enabled --service=ssh
+selinux --enforcing
+
+zerombr
+clearpart --all --initlabel
+autopart --type=lvm
+bootloader --append="quiet"
+reboot --eject
+
+%packages
+@^minimal-environment
+NetworkManager
+openssh-server
+python3
+sudo
+%end
+
+%post --interpreter=/bin/bash --erroronfail --log=/root/ks-post.log
+# 이 공개키는 이미지 생성 중 Packer가 접속할 때만 사용한다.
+# cleanup-template이 빌드 마지막에 packer 계정과 authorized_keys를 삭제한다.
+PACKER_USER="packer"
+PACKER_AUTHORIZED_KEY='${packer_authorized_key}'
+ANSIBLE_USER="user1"
+ANSIBLE_AUTHORIZED_KEY='${ansible_authorized_key}'
+
+useradd --create-home --groups wheel --shell /bin/bash "$PACKER_USER"
+passwd --delete "$PACKER_USER"
+
+install -d -m 0700 -o "$PACKER_USER" -g "$PACKER_USER" "/home/$PACKER_USER/.ssh"
+printf '%s\n' "$PACKER_AUTHORIZED_KEY" > "/home/$PACKER_USER/.ssh/authorized_keys"
+chown "$PACKER_USER:$PACKER_USER" "/home/$PACKER_USER/.ssh/authorized_keys"
+chmod 0600 "/home/$PACKER_USER/.ssh/authorized_keys"
+
+useradd --create-home --groups wheel --shell /bin/bash "$ANSIBLE_USER"
+passwd --delete "$ANSIBLE_USER"
+
+install -d -m 0700 -o "$ANSIBLE_USER" -g "$ANSIBLE_USER" "/home/$ANSIBLE_USER/.ssh"
+printf '%s\n' "$ANSIBLE_AUTHORIZED_KEY" > "/home/$ANSIBLE_USER/.ssh/authorized_keys"
+chown "$ANSIBLE_USER:$ANSIBLE_USER" "/home/$ANSIBLE_USER/.ssh/authorized_keys"
+chmod 0600 "/home/$ANSIBLE_USER/.ssh/authorized_keys"
+
+cat > /etc/sudoers.d/90-packer-build <<'EOF'
+packer ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 0440 /etc/sudoers.d/90-packer-build
+
+cat > /etc/sudoers.d/91-user1-ansible <<'EOF'
+user1 ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 0440 /etc/sudoers.d/91-user1-ansible
+
+cat > /etc/ssh/sshd_config.d/90-private-cloud-ssh.conf <<'EOF'
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+EOF
+
+systemctl enable sshd
+%end

@@ -1,0 +1,67 @@
+---
+- name: 복제 노드의 관리 식별자 초기화
+  hosts: bootstrap_nodes
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: 관리 NIC의 NetworkManager 연결 프로필 확인
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - --get-values
+          - GENERAL.CONNECTION
+          - device
+          - show
+          - "{{ bootstrap_management_interface }}"
+      register: management_connection
+      changed_when: false
+      check_mode: false
+
+    - name: 관리 NIC 연결 프로필이 존재하는지 확인
+      ansible.builtin.assert:
+        that:
+          - management_connection.stdout | trim | length > 0
+          - management_connection.stdout | trim != '--'
+        fail_msg: >-
+          {{ bootstrap_management_interface }}에서 NetworkManager 연결 프로필을 찾지 못했습니다.
+
+    - name: 노드 hostname 변경
+      ansible.builtin.hostname:
+        name: "{{ target_hostname }}"
+
+    - name: 관리 NIC의 고정 IP 설정 준비
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ management_connection.stdout | trim }}"
+          - ipv4.method
+          - manual
+          - ipv4.addresses
+          - "{{ target_management_address }}"
+          - ipv4.gateway
+          - ''
+          - ipv4.dns
+          - ''
+          - ipv6.method
+          - disabled
+          - connection.autoconnect
+          - 'yes'
+      changed_when: true
+      when: not ansible_check_mode
+
+    # 이 명령이 실행되면 172.16.2.100 SSH 연결이 끊길 수 있다.
+    # 따라서 Ansible이 기다리지 않도록 하고, 다음 접속부터 172.16.2.11을 사용한다.
+    - name: 새 관리 IP를 적용
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - up
+          - "{{ management_connection.stdout | trim }}"
+      async: 10
+      poll: 0
+      changed_when: true
+      when: not ansible_check_mode

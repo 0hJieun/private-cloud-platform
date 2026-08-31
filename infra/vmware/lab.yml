@@ -57,7 +57,12 @@ nodes:
       - network: management
         address: 172.16.2.11/24
       - network: provider
-        address: none
+        # ens192 자체가 아니라 이후 br-provider OVS 브리지가 이 주소를 사용한다.
+        address: 172.16.8.11/24
+        default_gateway: 172.16.8.2
+        dns:
+          - 8.8.8.8
+          - 1.1.1.1
         bridge: br-provider
 
   compute2:
@@ -76,7 +81,12 @@ nodes:
       - network: management
         address: 172.16.2.12/24
       - network: provider
-        address: none
+        # ens192 자체가 아니라 이후 br-provider OVS 브리지가 이 주소를 사용한다.
+        address: 172.16.8.12/24
+        default_gateway: 172.16.8.2
+        dns:
+          - 8.8.8.8
+          - 1.1.1.1
         bridge: br-provider
 
   storage:

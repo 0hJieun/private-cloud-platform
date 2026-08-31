@@ -1,0 +1,128 @@
+# VMware 외부 VM 실험 환경 설계도
+#
+# 이 파일에는 VM 설정값만 기록한다.
+# ISO, VMDK, QCOW2 같은 실제 이미지 파일은 저장소에 커밋하지 않는다.
+
+version: 1
+
+images:
+  outer_vm: Rocky Linux 9 Minimal ISO
+  inner_instance: Rocky Linux 9 GenericCloud qcow2
+
+networks:
+  management:
+    vmnet: VMnet2
+    cidr: 172.16.2.0/24
+    dhcp: disabled
+    purpose: control, compute, storage 관리용 네트워크
+
+  provider:
+    vmnet: VMnet8
+    cidr: 172.16.8.0/24
+    gateway: 172.16.8.2
+    dhcp_range: 172.16.8.151-172.16.8.239
+    dhcp_server: control
+    purpose: 인스턴스 네트워크와 외부 인터넷 연결
+
+nodes:
+  control:
+    hostname: control
+    role: control-plane
+    vcpus: 2
+    memory_mb: 3072
+    disks:
+      - name: os
+        size_gb: 16
+        provisioning: thin
+    nics:
+      - network: management
+        address: 172.16.2.10/24
+      - network: provider
+        address: 172.16.8.10/24
+        default_gateway: 172.16.8.2
+
+  compute1:
+    hostname: compute1
+    role: compute
+    vcpus: 2
+    memory_mb: 2560
+    disks:
+      - name: os
+        size_gb: 14
+        provisioning: thin
+      - name: instance-data
+        size_gb: 6
+        provisioning: thin
+    nics:
+      - network: management
+        address: 172.16.2.11/24
+      - network: provider
+        address: none
+        bridge: br-provider
+
+  compute2:
+    hostname: compute2
+    role: compute
+    vcpus: 2
+    memory_mb: 2560
+    disks:
+      - name: os
+        size_gb: 14
+        provisioning: thin
+      - name: instance-data
+        size_gb: 6
+        provisioning: thin
+    nics:
+      - network: management
+        address: 172.16.2.12/24
+      - network: provider
+        address: none
+        bridge: br-provider
+
+  storage:
+    hostname: storage
+    role: nfs-image-repository
+    vcpus: 1
+    memory_mb: 1536
+    disks:
+      - name: os
+        size_gb: 14
+        provisioning: thin
+      - name: image-data
+        size_gb: 6
+        provisioning: thin
+    nics:
+      - network: management
+        address: 172.16.2.20/24
+
+  storage1:
+    hostname: storage1
+    role: glusterfs-data
+    vcpus: 1
+    memory_mb: 1024
+    disks:
+      - name: os
+        size_gb: 11
+        provisioning: thin
+      - name: gluster-data
+        size_gb: 4
+        provisioning: thin
+    nics:
+      - network: management
+        address: 172.16.2.21/24
+
+  storage2:
+    hostname: storage2
+    role: glusterfs-data
+    vcpus: 1
+    memory_mb: 1024
+    disks:
+      - name: os
+        size_gb: 11
+        provisioning: thin
+      - name: gluster-data
+        size_gb: 4
+        provisioning: thin
+    nics:
+      - network: management
+        address: 172.16.2.22/24

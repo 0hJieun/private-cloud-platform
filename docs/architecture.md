@@ -17,7 +17,6 @@ control node가 관리하는 네트워크에서는 VMware DHCP 서비스를 비�
 
 - `control`: API, scheduler, MariaDB, DHCP, Ansible, Prometheus, Grafana, 관리자 웹 애플리케이션
 - `compute1`, `compute2`: libvirt/KVM, Open vSwitch
-- `storage`: NFS 이미지·인스턴스 볼륨 저장소
 - `storage1`, `storage2`: GlusterFS replica 데이터 노드
 - instance: cloud-init으로 초기화하고 Ansible로 관리하는 libvirt guest
 

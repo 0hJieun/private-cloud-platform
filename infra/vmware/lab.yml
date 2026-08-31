@@ -29,7 +29,7 @@ nodes:
     hostname: control
     role: control-plane
     vcpus: 2
-    memory_mb: 3072
+    memory_mb: 4096
     disks:
       - name: os
         size_gb: 20
@@ -45,8 +45,8 @@ nodes:
     hostname: compute1
     role: compute
     nested_virtualization: true
-    vcpus: 2
-    memory_mb: 2560
+    vcpus: 3
+    memory_mb: 6144
     disks:
       - name: os
         size_gb: 20
@@ -67,8 +67,8 @@ nodes:
     hostname: compute2
     role: compute
     nested_virtualization: true
-    vcpus: 2
-    memory_mb: 2560
+    vcpus: 3
+    memory_mb: 6144
     disks:
       - name: os
         size_gb: 20
@@ -85,31 +85,7 @@ nodes:
           - 1.1.1.1
         bridge: br-provider
 
-  # 강사님 기본 요구: 이미지와 초기 인스턴스 볼륨을 제공하는 NFS 저장소다.
-  storage:
-    hostname: storage
-    role: nfs-image-repository
-    vcpus: 1
-    memory_mb: 1536
-    disks:
-      - name: os
-        # Packer base 이미지를 full clone하므로 실제 OS 디스크 크기도 20GB다.
-        size_gb: 20
-        provisioning: thin
-      - name: image-data
-        size_gb: 10
-        provisioning: thin
-    nics:
-      - network: management
-        address: 172.16.2.20/24
-      - network: provider
-        address: 172.16.8.20/24
-        default_gateway: 172.16.8.2
-        dns:
-          - 8.8.8.8
-          - 1.1.1.1
-
-  # 추가 요구: storage1·2의 데이터 디스크로 replica 2 GlusterFS 볼륨을 구성한다.
+  # storage1·2의 데이터 디스크로 replica 2 GlusterFS 볼륨을 구성한다.
   storage1:
     hostname: storage1
     role: shared-storage

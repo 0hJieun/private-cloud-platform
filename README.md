@@ -18,7 +18,6 @@ KVM/libvirt, Open vSwitch, DHCP, storage, Ansible, cloud-init, Prometheus를 이
 control ── API / scheduler / MariaDB / DHCP / monitoring
    ├── compute1 ── libvirt/KVM / Open vSwitch
    ├── compute2 ── libvirt/KVM / Open vSwitch
-   ├── storage  ── NFS image repository
    ├── storage1 ── GlusterFS replica data
    └── storage2 ── GlusterFS replica data
 ```

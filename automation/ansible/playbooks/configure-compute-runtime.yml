@@ -8,6 +8,7 @@
     # Rocky Linux 기본 저장소에는 Open vSwitch 패키지가 없다.
     # CentOS NFV SIG의 EL9 OVS 저장소는 이 로컬 실습에서만 사용하는 호환 저장소다.
     nfv_sig_key_url: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-NFV
+    nfv_sig_common_release_rpm_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/Packages/c/centos-release-nfv-common-1-5.el9s.noarch.rpm
     nfv_sig_release_rpm_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/Packages/c/centos-release-nfv-openvswitch-1-5.el9s.noarch.rpm
     ovs_package_name: openvswitch3.5
 
@@ -19,7 +20,9 @@
 
     - name: Open vSwitch용 NFV SIG 저장소 등록
       ansible.builtin.dnf:
-        name: "{{ nfv_sig_release_rpm_url }}"
+        name:
+          - "{{ nfv_sig_common_release_rpm_url }}"
+          - "{{ nfv_sig_release_rpm_url }}"
         state: present
 
     - name: compute 가상화와 OVS 패키지 설치

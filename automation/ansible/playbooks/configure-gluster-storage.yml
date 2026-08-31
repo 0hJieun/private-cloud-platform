@@ -121,14 +121,15 @@
           - "{{ gluster_brick_mountpoint }}"
       register: gluster_data_mount
       changed_when: false
-      failed_when: gluster_data_mount.rc not in [0, 1]
+      # mountpoint(1)은 "마운트되지 않음"을 32로 반환한다.
+      failed_when: gluster_data_mount.rc not in [0, 32]
 
     - name: 데이터 디스크 마운트 적용
       ansible.builtin.command:
         argv:
           - mount
           - "{{ gluster_brick_mountpoint }}"
-      when: gluster_data_mount.rc == 1
+      when: gluster_data_mount.rc == 32
       changed_when: true
 
     - name: GlusterFS brick 디렉터리 생성

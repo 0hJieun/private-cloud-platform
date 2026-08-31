@@ -32,7 +32,7 @@ nodes:
     memory_mb: 3072
     disks:
       - name: os
-        size_gb: 16
+        size_gb: 20
         provisioning: thin
     nics:
       - network: management

@@ -58,6 +58,10 @@
       when:
         - inventory_hostname == gluster_primary_node
         - gluster_volume_info.rc == 1
+      args:
+        # GlusterFS가 brick 디렉터리 사용 여부를 묻는 경우에도
+        # Ansible의 비대화형 실행이 멈추지 않도록 명시적으로 확인한다.
+        stdin: "y"
       changed_when: true
 
     - name: 생성된 GlusterFS 볼륨 상태 조회

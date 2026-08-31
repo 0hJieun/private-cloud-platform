@@ -1,6 +1,6 @@
 ---
 - name: control 노드 초기 보안 설정
-  hosts: control
+  hosts: control_nodes
   gather_facts: true
   become: true
 

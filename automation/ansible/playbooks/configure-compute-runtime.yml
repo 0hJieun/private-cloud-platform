@@ -42,6 +42,7 @@
           - "{{ ovs_package_name }}"
           - openvswitch-selinux-extra-policy
         state: present
+      notify: NetworkManager 다시 시작
 
     - name: libvirt 데몬 시작과 자동 시작 설정
       ansible.builtin.service:
@@ -81,3 +82,10 @@
           - --version
       changed_when: false
       check_mode: false
+
+  handlers:
+    # NetworkManager는 시작할 때 OVS 플러그인을 불러온다.
+    - name: NetworkManager 다시 시작
+      ansible.builtin.service:
+        name: NetworkManager
+        state: restarted

@@ -116,6 +116,29 @@
           - 'yes'
       changed_when: true
 
+    # OVS 포트로 전환하기 전에 기존 IPv4 설정을 완전히 비운다.
+    # NetworkManager는 포트 프로필에 주소·게이트웨이·DNS 항목이 남아 있으면 전환을 거부한다.
+    - name: 물리 provider NIC의 기존 IP 설정 제거
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ provider_connection.stdout | trim }}"
+          - ipv4.method
+          - disabled
+          - ipv4.addresses
+          - ''
+          - ipv4.gateway
+          - ''
+          - ipv4.dns
+          - ''
+          - ipv6.method
+          - disabled
+          - ipv4.never-default
+          - 'yes'
+      changed_when: true
+
     - name: 물리 provider NIC를 OVS 포트에 연결
       ansible.builtin.command:
         argv:
@@ -127,12 +150,6 @@
           - "{{ provider_port_name }}"
           - connection.port-type
           - ovs-port
-          - ipv4.method
-          - disabled
-          - ipv6.method
-          - disabled
-          - ipv4.never-default
-          - 'yes'
           - connection.autoconnect
           - 'yes'
       changed_when: true

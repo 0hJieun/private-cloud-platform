@@ -83,50 +83,46 @@ nodes:
           - 1.1.1.1
         bridge: br-provider
 
-  storage:
-    hostname: storage
-    role: nfs-image-repository
-    vcpus: 1
-    memory_mb: 1536
-    disks:
-      - name: os
-        size_gb: 14
-        provisioning: thin
-      - name: image-data
-        size_gb: 6
-        provisioning: thin
-    nics:
-      - network: management
-        address: 172.16.2.20/24
-
   storage1:
     hostname: storage1
-    role: glusterfs-data
+    role: shared-storage
     vcpus: 1
-    memory_mb: 1024
+    memory_mb: 2048
     disks:
       - name: os
-        size_gb: 11
+        size_gb: 20
         provisioning: thin
       - name: gluster-data
-        size_gb: 4
+        size_gb: 20
         provisioning: thin
     nics:
       - network: management
         address: 172.16.2.21/24
+      - network: provider
+        address: 172.16.8.21/24
+        default_gateway: 172.16.8.2
+        dns:
+          - 8.8.8.8
+          - 1.1.1.1
 
   storage2:
     hostname: storage2
-    role: glusterfs-data
+    role: shared-storage
     vcpus: 1
-    memory_mb: 1024
+    memory_mb: 2048
     disks:
       - name: os
-        size_gb: 11
+        size_gb: 20
         provisioning: thin
       - name: gluster-data
-        size_gb: 4
+        size_gb: 20
         provisioning: thin
     nics:
       - network: management
         address: 172.16.2.22/24
+      - network: provider
+        address: 172.16.8.22/24
+        default_gateway: 172.16.8.2
+        dns:
+          - 8.8.8.8
+          - 1.1.1.1

@@ -5,6 +5,16 @@
   become: true
 
   tasks:
+    - name: bootstrap 입력값 확인
+      ansible.builtin.assert:
+        that:
+          - target_hostname is defined
+          - target_hostname | length > 0
+          - target_management_address is defined
+          - target_management_address is match('^172\\.16\\.2\\.[0-9]{1,3}/24$')
+        fail_msg: >-
+          target_hostname과 target_management_address를 extra vars로 전달해야 합니다.
+
     - name: 관리 NIC의 NetworkManager 연결 프로필 확인
       ansible.builtin.command:
         argv:
@@ -53,7 +63,7 @@
       when: not ansible_check_mode
 
     # 이 명령이 실행되면 172.16.2.100 SSH 연결이 끊길 수 있다.
-    # 따라서 Ansible이 기다리지 않도록 하고, 다음 접속부터 172.16.2.11을 사용한다.
+    # 따라서 Ansible이 기다리지 않도록 하고, 다음 접속부터 target_management_address를 사용한다.
     - name: 새 관리 IP를 적용
       ansible.builtin.command:
         argv:

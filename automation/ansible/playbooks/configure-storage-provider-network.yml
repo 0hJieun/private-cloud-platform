@@ -1,0 +1,92 @@
+---
+- name: storage 노드의 일반 provider 네트워크 구성
+  hosts: storage_nodes
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: provider NIC의 NetworkManager 연결 프로필 확인
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - --get-values
+          - GENERAL.CONNECTION
+          - device
+          - show
+          - "{{ provider_interface }}"
+      register: provider_connection
+      changed_when: false
+      check_mode: false
+
+    # storage는 inner VM TAP 장치를 연결하지 않으므로 OVS가 아닌 일반 Ethernet NIC를 사용한다.
+    - name: provider NIC 연결 프로필 생성
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - add
+          - type
+          - ethernet
+          - ifname
+          - "{{ provider_interface }}"
+          - con-name
+          - "provider-{{ inventory_hostname }}"
+          - ipv4.method
+          - disabled
+          - ipv6.method
+          - disabled
+      changed_when: true
+      when: >-
+        provider_connection.stdout | trim | length == 0 or
+        provider_connection.stdout | trim == '--'
+
+    - name: 사용할 provider NIC 연결 프로필 이름 결정
+      ansible.builtin.set_fact:
+        provider_connection_name: >-
+          {{ (provider_connection.stdout | trim)
+             if (provider_connection.stdout | trim | length > 0 and
+                 provider_connection.stdout | trim != '--')
+             else 'provider-' ~ inventory_hostname }}
+
+    - name: provider NIC에 외부 주소와 DNS 설정
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ provider_connection_name }}"
+          - ipv4.method
+          - manual
+          - ipv4.addresses
+          - "{{ provider_address }}"
+          - ipv4.gateway
+          - "{{ provider_gateway }}"
+          - ipv4.dns
+          - "{{ provider_dns }}"
+          - ipv4.never-default
+          - 'no'
+          - ipv6.method
+          - disabled
+          - connection.autoconnect
+          - 'yes'
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: provider NIC 연결 활성화
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - up
+          - "{{ provider_connection_name }}"
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Rocky 저장소 도메인 DNS 해석 확인
+      ansible.builtin.command:
+        argv:
+          - getent
+          - ahostsv4
+          - mirrors.rockylinux.org
+      changed_when: false
+      when: not ansible_check_mode

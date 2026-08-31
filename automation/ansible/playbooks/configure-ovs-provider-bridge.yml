@@ -9,6 +9,7 @@
     # bootstrap-provider-network.yml가 새 NIC에 생성하는 연결 프로필 이름이다.
     provider_physical_connection_name: "provider-{{ inventory_hostname }}"
     provider_physical_port_name: "ovs-physical-{{ inventory_hostname }}"
+    legacy_provider_port_name: "ovs-provider-{{ inventory_hostname }}"
     # OVS에서 호스트 IP를 올리려면 bridge 외에 internal interface가 필요하다.
     provider_local_port_name: "ovs-local-{{ provider_bridge_name }}"
     provider_local_interface_profile: "ovs-if-{{ provider_bridge_name }}"
@@ -34,6 +35,19 @@
           - connection
           - show
       register: connection_names
+      changed_when: false
+      check_mode: false
+
+    - name: 물리 provider NIC의 OVS 포트 전환 여부 확인
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - --get-values
+          - connection.port-type
+          - connection
+          - show
+          - "{{ provider_physical_connection_name }}"
+      register: provider_port_type
       changed_when: false
       check_mode: false
 
@@ -187,6 +201,7 @@
           - ipv4.never-default
           - 'yes'
       changed_when: true
+      when: provider_port_type.stdout | trim != 'ovs-port'
 
     - name: 물리 provider NIC를 OVS 포트에 연결
       ansible.builtin.command:
@@ -282,6 +297,19 @@
           - up
           - "{{ provider_physical_connection_name }}"
       changed_when: true
+
+    # 초기 구현에서 생성된 포트 이름을 새 표준 이름으로 교체한다.
+    - name: 이전 provider OVS 포트 정리
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - delete
+          - "{{ legacy_provider_port_name }}"
+      changed_when: true
+      when:
+        - legacy_provider_port_name != provider_physical_port_name
+        - legacy_provider_port_name in connection_names.stdout_lines
 
     - name: OVS provider 브리지 주소 확인
       ansible.builtin.command:

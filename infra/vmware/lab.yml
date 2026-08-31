@@ -93,7 +93,8 @@ nodes:
     memory_mb: 1536
     disks:
       - name: os
-        size_gb: 15
+        # Packer base 이미지를 full clone하므로 실제 OS 디스크 크기도 20GB다.
+        size_gb: 20
         provisioning: thin
       - name: image-data
         size_gb: 10
@@ -116,7 +117,8 @@ nodes:
     memory_mb: 2048
     disks:
       - name: os
-        size_gb: 15
+        # Packer base 이미지를 full clone하므로 실제 OS 디스크 크기도 20GB다.
+        size_gb: 20
         provisioning: thin
       - name: gluster-data
         size_gb: 10
@@ -138,7 +140,8 @@ nodes:
     memory_mb: 2048
     disks:
       - name: os
-        size_gb: 15
+        # Packer base 이미지를 full clone하므로 실제 OS 디스크 크기도 20GB다.
+        size_gb: 20
         provisioning: thin
       - name: gluster-data
         size_gb: 10

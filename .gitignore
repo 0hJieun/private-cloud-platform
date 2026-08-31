@@ -22,6 +22,11 @@ dist/
 build/
 
 # Virtual machines and images
+packer_cache/
+output-*/
+*.vmx
+*.vmxf
+*.vmsd
 *.qcow2
 *.qcow
 *.img
@@ -34,6 +39,11 @@ build/
 *.vmem
 *.vmss
 *.nvram
+
+# Terraform state, if introduced later
+.terraform/
+*.tfstate
+*.tfstate.*
 
 # Runtime data
 data/

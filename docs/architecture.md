@@ -40,6 +40,10 @@ cloud-init은 instance가 부팅된 뒤 최초 설정을 수행합니다. VMware
 
 GlusterFS 볼륨은 두 storage 노드에 replica 2로 구성한다. 이는 한 brick 장애 뒤에도 데이터 사본을 유지하기 위한 구성이다. 다만 2노드 구성만으로 split-brain 방지와 fencing을 포함한 완전한 HA가 되지는 않으므로, 자동 장애 조치와 유지보수 migration은 별도 운영 시나리오로 구현한다.
 
+## 스토리지 토폴로지
+
+`storage1(172.16.8.21)`과 `storage2(172.16.8.22)`는 provider 네트워크에서 GlusterFS trusted storage pool을 구성한다. `instance-volumes`는 두 노드의 `/srv/gluster/brick1/instances` brick을 사용하는 replica 2 볼륨이다. compute 노드는 이후 이 볼륨을 FUSE 클라이언트로 마운트해 인스턴스 qcow2 볼륨을 공유한다.
+
 ## Instance 생명주기
 
 ```text

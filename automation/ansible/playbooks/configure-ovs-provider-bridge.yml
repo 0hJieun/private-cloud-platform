@@ -62,6 +62,12 @@
           - "{{ provider_bridge_name }}"
           - ipv4.method
           - disabled
+          - ipv4.addresses
+          - ''
+          - ipv4.gateway
+          - ''
+          - ipv4.dns
+          - ''
           - ipv6.method
           - disabled
           - connection.autoconnect

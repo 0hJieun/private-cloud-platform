@@ -18,8 +18,9 @@ KVM/libvirt, Open vSwitch, DHCP, storage, Ansible, cloud-init, Prometheus를 이
 control ── API / scheduler / MariaDB / DHCP / monitoring
    ├── compute1 ── libvirt/KVM / Open vSwitch
    ├── compute2 ── libvirt/KVM / Open vSwitch
-   ├── storage1 ── shared storage / GlusterFS replica
-   └── storage2 ── shared storage / GlusterFS replica
+   ├── storage  ── NFS image repository
+   ├── storage1 ── GlusterFS replica data
+   └── storage2 ── GlusterFS replica data
 ```
 
 관리자 페이지는 control 내부의 Nginx, WAS, MariaDB로 구성합니다.

@@ -1,0 +1,178 @@
+---
+- name: storage 노드의 GlusterFS 런타임 준비
+  hosts: storage_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    # Rocky Linux 기본 저장소에는 GlusterFS 서버 패키지가 없으므로,
+    # 공식 CentOS Storage SIG의 EL9 호환 저장소를 사용한다.
+    centos_extras_sig_key_url: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-Extras
+    centos_storage_sig_key_url: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-SIG-Storage
+    storage_sig_common_release_rpm_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/Packages/c/centos-release-storage-common-2-5.el9s.noarch.rpm
+    gluster_sig_release_rpm_url: https://mirror.stream.centos.org/SIGs/9-stream/extras/x86_64/extras-common/Packages/c/centos-release-gluster11-1.0-1.el9s.noarch.rpm
+    gluster_brick_mountpoint: /srv/gluster/brick1
+    gluster_brick_directory: /srv/gluster/brick1/instances
+
+  tasks:
+    - name: GlusterFS 데이터 디스크 존재와 블록 장치 여부 확인
+      ansible.builtin.stat:
+        path: "{{ storage_data_device }}"
+      register: storage_data_device_stat
+
+    - name: GlusterFS 데이터 디스크 대상 검증
+      ansible.builtin.assert:
+        that:
+          - storage_data_device_stat.stat.exists
+          - storage_data_device_stat.stat.isblk
+        fail_msg: >-
+          {{ storage_data_device }}는 존재하는 블록 디스크여야 합니다.
+          운영체제 디스크를 지정하지 마세요.
+
+    - name: 기존 데이터 디스크 파일시스템 확인
+      ansible.builtin.command:
+        argv:
+          - blkid
+          - -o
+          - value
+          - -s
+          - TYPE
+          - "{{ storage_data_device }}"
+      register: storage_data_filesystem
+      changed_when: false
+      failed_when: storage_data_filesystem.rc not in [0, 2]
+
+    # 빈 디스크 또는 이미 이 프로젝트가 만든 XFS만 허용한다.
+    # ext4 등 다른 파일시스템이 발견되면 포맷하지 않고 즉시 중단한다.
+    - name: 데이터 디스크 포맷 가능 여부 확인
+      ansible.builtin.assert:
+        that:
+          - (storage_data_filesystem.stdout | trim) in ['', 'xfs']
+        fail_msg: >-
+          {{ storage_data_device }}에 {{ storage_data_filesystem.stdout | trim }} 파일시스템이 있습니다.
+          데이터 보호를 위해 자동 포맷을 중단합니다.
+
+    - name: CentOS Storage SIG 저장소 서명키 등록
+      ansible.builtin.rpm_key:
+        state: present
+        key: "{{ item }}"
+      loop:
+        - "{{ centos_extras_sig_key_url }}"
+        - "{{ centos_storage_sig_key_url }}"
+
+    - name: GlusterFS용 CentOS Storage SIG 저장소 등록
+      ansible.builtin.dnf:
+        name:
+          - "{{ storage_sig_common_release_rpm_url }}"
+          - "{{ gluster_sig_release_rpm_url }}"
+        state: present
+
+    - name: GlusterFS 서버와 XFS 도구 설치
+      ansible.builtin.dnf:
+        name:
+          - glusterfs-server
+          - glusterfs-cli
+          - glusterfs-fuse
+          - xfsprogs
+        state: present
+
+    # 파일시스템이 없는 새 데이터 디스크일 때만 실행되는 유일한 파괴적 작업이다.
+    - name: 빈 데이터 디스크에 XFS 파일시스템 생성
+      ansible.builtin.command:
+        argv:
+          - mkfs.xfs
+          - -f
+          - "{{ storage_data_device }}"
+      when: storage_data_filesystem.rc == 2
+      changed_when: true
+
+    - name: 데이터 디스크 UUID 조회
+      ansible.builtin.command:
+        argv:
+          - blkid
+          - -o
+          - value
+          - -s
+          - UUID
+          - "{{ storage_data_device }}"
+      register: storage_data_uuid
+      changed_when: false
+
+    - name: GlusterFS 데이터 디스크 마운트 경로 생성
+      ansible.builtin.file:
+        path: "{{ gluster_brick_mountpoint }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: 데이터 디스크의 부팅 후 자동 마운트 등록
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: "^.*\\s+{{ gluster_brick_mountpoint }}\\s+.*$"
+        line: "UUID={{ storage_data_uuid.stdout | trim }} {{ gluster_brick_mountpoint }} xfs defaults,noatime 0 0"
+        state: present
+
+    - name: 데이터 디스크 마운트 상태 확인
+      ansible.builtin.command:
+        argv:
+          - mountpoint
+          - -q
+          - "{{ gluster_brick_mountpoint }}"
+      register: gluster_data_mount
+      changed_when: false
+      failed_when: gluster_data_mount.rc not in [0, 1]
+
+    - name: 데이터 디스크 마운트 적용
+      ansible.builtin.command:
+        argv:
+          - mount
+          - "{{ gluster_brick_mountpoint }}"
+      when: gluster_data_mount.rc == 1
+      changed_when: true
+
+    - name: GlusterFS brick 디렉터리 생성
+      ansible.builtin.file:
+        path: "{{ gluster_brick_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: GlusterFS 데몬 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: glusterd
+        state: started
+        enabled: true
+
+    - name: 방화벽의 GlusterFS 서비스 상태 확인
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --query-service=glusterfs
+      register: gluster_firewall_service
+      changed_when: false
+      failed_when: gluster_firewall_service.rc not in [0, 1]
+
+    - name: 방화벽에서 GlusterFS 서비스 허용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --add-service=glusterfs
+      when: gluster_firewall_service.rc == 1
+      changed_when: true
+      notify: 방화벽 정책 다시 불러오기
+
+    - name: GlusterFS 서버 버전 확인
+      ansible.builtin.command:
+        argv:
+          - gluster
+          - --version
+      changed_when: false
+
+  handlers:
+    - name: 방화벽 정책 다시 불러오기
+      ansible.builtin.command: firewall-cmd --reload
+      changed_when: false

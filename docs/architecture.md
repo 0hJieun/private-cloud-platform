@@ -17,7 +17,7 @@ control node가 관리하는 네트워크에서는 VMware DHCP 서비스를 비�
 
 - `control`: API, scheduler, MariaDB, DHCP, Ansible, Prometheus, Grafana, 관리자 웹 애플리케이션
 - `compute1`, `compute2`: libvirt/KVM, Open vSwitch
-- `storage1`, `storage2`: GlusterFS replica 데이터 노드
+- `storage1`, `storage2`: GlusterFS replica 2 데이터 노드
 - instance: cloud-init으로 초기화하고 Ansible로 관리하는 libvirt guest
 
 ## 프로비저닝 계층
@@ -37,6 +37,8 @@ control plane
 ```
 
 cloud-init은 instance가 부팅된 뒤 최초 설정을 수행합니다. VMware Workstation VM을 생성하는 주 도구는 아닙니다. Outer VM 이미지는 Packer로 만들고, guest 설정은 Ansible로 관리합니다. 호스트 수준의 VMware 네트워크 설정은 실행 환경에 따라 달라질 수 있습니다.
+
+GlusterFS 볼륨은 두 storage 노드에 replica 2로 구성한다. 이는 한 brick 장애 뒤에도 데이터 사본을 유지하기 위한 구성이다. 다만 2노드 구성만으로 split-brain 방지와 fencing을 포함한 완전한 HA가 되지는 않으므로, 자동 장애 조치와 유지보수 migration은 별도 운영 시나리오로 구현한다.
 
 ## Instance 생명주기
 

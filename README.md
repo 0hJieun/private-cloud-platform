@@ -10,7 +10,7 @@ KVM/libvirt, Open vSwitch, DHCP, storage, Ansible, cloud-init, Prometheus를 이
 - cloud-init 기반 초기화와 SSH public key 주입
 - Ansible 기반 인프라 구성 및 동적 inventory 관리
 - Prometheus/Grafana 기반 관찰 가능성
-- NFS와 GlusterFS를 이용한 이미지·볼륨 관리
+- GlusterFS replica 기반 이미지·볼륨 관리
 
 ## 아키텍처
 

@@ -1,0 +1,219 @@
+---
+- name: compute 노드의 OVS provider 브리지 구성
+  hosts: compute_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    provider_bridge_name: br-provider
+    provider_port_name: "ovs-provider-{{ inventory_hostname }}"
+
+  tasks:
+    # bootstrap-provider-network.yml에서 만든 물리 NIC 프로필을 찾는다.
+    - name: provider NIC의 현재 연결 프로필 확인
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - --get-values
+          - GENERAL.CONNECTION
+          - device
+          - show
+          - "{{ provider_interface }}"
+      register: provider_connection
+      changed_when: false
+      check_mode: false
+
+    - name: provider NIC 연결 프로필 확인
+      ansible.builtin.assert:
+        that:
+          - provider_connection.stdout | trim | length > 0
+          - provider_connection.stdout | trim != '--'
+        fail_msg: >-
+          {{ provider_interface }}에서 provider 연결 프로필을 찾지 못했습니다.
+
+    - name: 현재 NetworkManager 연결 이름 조회
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - --get-values
+          - NAME
+          - connection
+          - show
+      register: connection_names
+      changed_when: false
+      check_mode: false
+
+    - name: OVS provider 브리지 생성
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - add
+          - type
+          - ovs-bridge
+          - ifname
+          - "{{ provider_bridge_name }}"
+          - con-name
+          - "{{ provider_bridge_name }}"
+      changed_when: true
+      when: provider_bridge_name not in connection_names.stdout_lines
+
+    # IP, 기본 게이트웨이, DNS는 물리 NIC가 아니라 OVS 브리지에 둔다.
+    - name: OVS provider 브리지의 외부 주소 설정
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ provider_bridge_name }}"
+          - ipv4.method
+          - manual
+          - ipv4.addresses
+          - "{{ provider_address }}"
+          - ipv4.gateway
+          - "{{ provider_gateway }}"
+          - ipv4.dns
+          - "{{ provider_dns }}"
+          - ipv4.never-default
+          - 'no'
+          - ipv6.method
+          - disabled
+          - connection.autoconnect
+          - 'yes'
+          - connection.autoconnect-ports
+          - '1'
+      changed_when: true
+
+    - name: OVS provider 포트 생성
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - add
+          - type
+          - ovs-port
+          - ifname
+          - "{{ provider_port_name }}"
+          - con-name
+          - "{{ provider_port_name }}"
+          - controller
+          - "{{ provider_bridge_name }}"
+      changed_when: true
+      when: provider_port_name not in connection_names.stdout_lines
+
+    - name: OVS provider 포트의 IP 설정 비활성화
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ provider_port_name }}"
+          - ipv4.method
+          - disabled
+          - ipv6.method
+          - disabled
+          - connection.autoconnect
+          - 'yes'
+      changed_when: true
+
+    - name: 물리 provider NIC를 OVS 포트에 연결
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ provider_connection.stdout | trim }}"
+          - connection.controller
+          - "{{ provider_port_name }}"
+          - connection.port-type
+          - ovs-port
+          - ipv4.method
+          - disabled
+          - ipv6.method
+          - disabled
+          - ipv4.never-default
+          - 'yes'
+          - connection.autoconnect
+          - 'yes'
+      changed_when: true
+
+    # Ansible은 관리망 ens160을 이용하므로 provider 전환 중에도 연결이 유지된다.
+    - name: 기존 물리 provider 연결 비활성화
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - down
+          - "{{ provider_connection.stdout | trim }}"
+      changed_when: true
+      failed_when: false
+
+    - name: OVS provider 브리지 활성화
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - up
+          - "{{ provider_bridge_name }}"
+      changed_when: true
+
+    - name: OVS provider 포트 활성화
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - up
+          - "{{ provider_port_name }}"
+      changed_when: true
+
+    - name: 물리 provider NIC 활성화
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - up
+          - "{{ provider_connection.stdout | trim }}"
+      changed_when: true
+
+    - name: OVS provider 브리지 주소 확인
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -br
+          - addr
+          - show
+          - "{{ provider_bridge_name }}"
+      register: provider_bridge_address
+      changed_when: false
+      check_mode: false
+
+    - name: 기본 경로 확인
+      ansible.builtin.command:
+        argv:
+          - ip
+          - route
+          - show
+          - default
+      register: provider_default_route
+      changed_when: false
+      check_mode: false
+
+    - name: OVS provider 브리지 포트 확인
+      ansible.builtin.command:
+        argv:
+          - ovs-vsctl
+          - list-ports
+          - "{{ provider_bridge_name }}"
+      register: provider_bridge_ports
+      changed_when: false
+      check_mode: false
+
+    - name: OVS provider 브리지 구성 검증
+      ansible.builtin.assert:
+        that:
+          - provider_address | split('/') | first in provider_bridge_address.stdout
+          - "'via ' ~ provider_gateway ~ ' dev ' ~ provider_bridge_name in provider_default_route.stdout"
+          - provider_interface in provider_bridge_ports.stdout_lines
+        fail_msg: >-
+          br-provider 전환 검증에 실패했습니다. 관리망 ens160 연결은 유지되므로
+          NetworkManager와 OVS 상태를 점검한 뒤 복구할 수 있습니다.

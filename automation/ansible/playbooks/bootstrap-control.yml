@@ -1,0 +1,51 @@
+---
+- name: control 노드 초기 보안 설정
+  hosts: control
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: SSH 서비스를 부팅 시 자동 시작하도록 설정
+      ansible.builtin.service:
+        name: sshd
+        enabled: true
+        state: started
+
+    - name: 방화벽에서 SSH 서비스를 허용
+      ansible.builtin.command: firewall-cmd --permanent --add-service=ssh
+      register: ssh_firewall
+      changed_when: "'ALREADY_ENABLED' not in ssh_firewall.stdout"
+      failed_when: >-
+        ssh_firewall.rc != 0 and
+        'ALREADY_ENABLED' not in ssh_firewall.stdout
+
+    - name: 변경된 방화벽 정책을 다시 불러오기
+      ansible.builtin.command: firewall-cmd --reload
+      when: ssh_firewall.changed
+      changed_when: false
+
+    - name: SSH 공개키 전용 접속 정책을 배포
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-private-cloud.conf
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          # Ansible로 관리하는 private-cloud SSH 정책
+          PermitRootLogin no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+      notify: SSH 설정 검증 및 다시 불러오기
+
+  handlers:
+    - name: SSH 설정 검증
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+      listen: SSH 설정 검증 및 다시 불러오기
+
+    - name: SSH 설정 다시 불러오기
+      ansible.builtin.service:
+        name: sshd
+        state: reloaded
+      listen: SSH 설정 검증 및 다시 불러오기

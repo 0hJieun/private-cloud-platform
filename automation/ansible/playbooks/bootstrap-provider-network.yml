@@ -18,13 +18,35 @@
       changed_when: false
       check_mode: false
 
-    - name: provider NIC 연결 프로필이 존재하는지 확인
-      ansible.builtin.assert:
-        that:
-          - provider_connection.stdout | trim | length > 0
-          - provider_connection.stdout | trim != '--'
-        fail_msg: >-
-          {{ provider_interface }}에서 NetworkManager 연결 프로필을 찾지 못했습니다.
+    # VMware에서 설치 후 새 NIC를 추가하면 연결 프로필이 없을 수 있다.
+    - name: provider NIC 연결 프로필 생성
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - add
+          - type
+          - ethernet
+          - ifname
+          - "{{ provider_interface }}"
+          - con-name
+          - "provider-{{ inventory_hostname }}"
+          - ipv4.method
+          - disabled
+          - ipv6.method
+          - disabled
+      changed_when: true
+      when: >-
+        provider_connection.stdout | trim | length == 0 or
+        provider_connection.stdout | trim == '--'
+
+    - name: 사용할 provider NIC 연결 프로필 이름 결정
+      ansible.builtin.set_fact:
+        provider_connection_name: >-
+          {{ (provider_connection.stdout | trim)
+             if (provider_connection.stdout | trim | length > 0 and
+                 provider_connection.stdout | trim != '--')
+             else 'provider-' ~ inventory_hostname }}
 
     # OVS 설치 전에는 물리 NIC에 주소를 잠시 둔다.
     # 이후 br-provider 생성 시 이 동일한 주소를 브리지로 이전한다.
@@ -34,7 +56,7 @@
           - nmcli
           - connection
           - modify
-          - "{{ provider_connection.stdout | trim }}"
+          - "{{ provider_connection_name }}"
           - ipv4.method
           - manual
           - ipv4.addresses
@@ -58,7 +80,7 @@
           - nmcli
           - connection
           - up
-          - "{{ provider_connection.stdout | trim }}"
+          - "{{ provider_connection_name }}"
       changed_when: true
       when: not ansible_check_mode
 

@@ -117,6 +117,10 @@ class Instance(Base):
     # 테넌트 OS 내부 agent는 기본값으로 설치하지 않는다. 사용자가 관리형 모니터링을
     # 명시적으로 선택한 instance만 Prometheus target으로 등록한다.
     monitoring_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # 새 VM은 control의 별도 automation public key를 함께 받아 Ansible runtime
+    # inventory에 편입된다. 기존 VM은 해당 키가 없으므로 migration 기본값 false로
+    # 남겨, 의도하지 않은 control SSH 접근을 만들지 않는다.
+    automation_enrolled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=InstanceStatus.REQUESTED)
     assigned_compute_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     provider_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)

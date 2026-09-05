@@ -1,0 +1,13 @@
+---
+# 구성 변경 없이 control이 자동 편입한 inner VM의 SSH/Ansible 접근만 검증한다.
+- name: control runtime inventory의 managed instance 연결 검증
+  hosts: instances
+  gather_facts: false
+
+  tasks:
+    - name: Ansible SSH ping 확인
+      ansible.builtin.ping:
+
+    - name: guest hostname 확인
+      ansible.builtin.command: hostnamectl --static
+      changed_when: false

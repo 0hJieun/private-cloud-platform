@@ -356,7 +356,9 @@ function renderDetail(instance) {
   setText("#detail-subtitle", `${instance.owner_username} · ${formatDate(instance.created_at)} 생성`);
   setDefinitionList("#detail-configuration", [
     ["소유자", instance.owner_username], ["이미지", imageLabel(instance)], ["요청 자원", resourceLabel(instance)],
-    ["모니터링", instance.monitoring_enabled ? "관리형 모니터링 활성화" : "비활성"], ["상태", statusLabel(instance.status)],
+    ["모니터링", instance.monitoring_enabled ? "관리형 모니터링 활성화" : "비활성"],
+    ["Ansible 관리", instance.automation_enrolled ? "control runtime inventory에 등록" : "자동화 키 주입 전 생성된 VM"],
+    ["상태", statusLabel(instance.status)],
   ]);
   setDefinitionList("#detail-connectivity", [
     ["배치 compute", instance.assigned_compute || "scheduler 배치 대기"], ["Provider IP", instance.provider_ip || "DHCP IP 대기"],

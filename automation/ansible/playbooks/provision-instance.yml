@@ -27,6 +27,10 @@
     # extra var로 전달한다. 공개키 문자열을 shell 인자에 직접 넣지 않기 위한 선택이다.
     instance_owner_ssh_public_key_path: ''
     instance_owner_ssh_public_key: ''
+    # control이 tenant VM을 구성 관리할 때만 쓰는 별도 automation public key다.
+    # outer infrastructure용 private-cloud-ansible 키를 inner VM에 재사용하지 않는다.
+    instance_automation_ssh_public_key_path: /home/user1/.ssh/private-cloud-instance-automation.pub
+    instance_automation_ssh_public_key: ''
     # guest agent는 테넌트가 명시적으로 선택한 경우에만 설치한다. control의 VM 생성·
     # 삭제·DHCP 확인은 libvirt와 DHCP lease를 사용하므로 guest SSH 관리키가 필요 없다.
     instance_monitoring_enabled: false
@@ -81,6 +85,30 @@
         that:
           - instance_owner_ssh_public_key is match('^ssh-(ed25519|rsa|ecdsa) ')
         fail_msg: 인스턴스 소유자 SSH 공개키 형식이 올바르지 않습니다.
+
+    - name: control automation 공개키 파일 존재 여부 확인
+      ansible.builtin.stat:
+        path: "{{ instance_automation_ssh_public_key_path }}"
+      delegate_to: localhost
+      become: false
+      register: instance_automation_key_file
+
+    - name: control automation 공개키 파일 검증
+      ansible.builtin.assert:
+        that:
+          - instance_automation_key_file.stat.exists
+          - instance_automation_key_file.stat.isreg
+        fail_msg: control의 instance automation 공개키를 찾지 못했습니다.
+
+    - name: 파일에서 control automation 공개키 읽기
+      ansible.builtin.set_fact:
+        instance_automation_ssh_public_key: "{{ lookup('ansible.builtin.file', instance_automation_ssh_public_key_path) | trim }}"
+
+    - name: control automation 공개키 형식 검증
+      ansible.builtin.assert:
+        that:
+          - instance_automation_ssh_public_key is match('^ssh-(ed25519|rsa|ecdsa) ')
+        fail_msg: control automation 공개키 형식이 올바르지 않습니다.
 
     - name: 공유 GlusterFS 볼륨 마운트 확인
       ansible.builtin.command:
@@ -177,9 +205,12 @@
               shell: /bin/bash
               sudo: ALL=(ALL) NOPASSWD:ALL
               ssh_authorized_keys:
-                # VM 소유자가 등록한 공개키만 주입한다. control의 Ansible private key는
-                # infrastructure node 자동화 전용이며 tenant guest에는 넣지 않는다.
+                # VM 소유자가 등록한 공개키는 tenant의 일반 접속에 쓴다.
                 - {{ instance_owner_ssh_public_key }}
+                # control의 별도 instance automation key다. compute/storage 등 outer
+                # infrastructure에 쓰는 키와 분리하며, ACTIVE 뒤 runtime inventory의
+                # [instances] 그룹에서만 사용한다.
+                - {{ instance_automation_ssh_public_key }}
           ssh_pwauth: false
           disable_root: true
           runcmd:

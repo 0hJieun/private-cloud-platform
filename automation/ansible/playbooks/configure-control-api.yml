@@ -17,6 +17,12 @@
     control_api_bootstrap_marker: "{{ control_api_environment_directory }}/bootstrap.complete"
     control_api_initial_credentials_file: /home/user1/private-cloud-initial-credentials.env
     control_api_work_directory: /home/user1/.local/share/private-cloud/operations
+    # tenant VM에 주입하는 키는 compute/storage 등 outer 노드용 Ansible 키와 분리한다.
+    control_instance_automation_private_key: /home/user1/.ssh/private-cloud-instance-automation
+    control_instance_automation_public_key: /home/user1/.ssh/private-cloud-instance-automation.pub
+    control_instance_inventory_directory: /home/user1/.local/share/private-cloud/ansible
+    control_instance_inventory_file: /home/user1/.local/share/private-cloud/ansible/instances.json
+    control_instance_known_hosts_file: /home/user1/.local/share/private-cloud/ansible/known_hosts
     control_api_database_name: private_cloud
     control_api_database_user: privatecloud
     control_api_service_name: private-cloud-api
@@ -36,6 +42,45 @@
           - control_api_source.stat.exists
           - control_api_source.stat.isreg
         fail_msg: control 저장소를 최신 main 브랜치로 동기화한 뒤 실행하세요.
+
+    - name: user1 SSH 키 디렉터리 권한 확인
+      ansible.builtin.file:
+        path: /home/user1/.ssh
+        state: directory
+        owner: user1
+        group: user1
+        mode: '0700'
+
+    - name: inner VM 전용 Ansible automation 키 생성
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -q
+          - -t
+          - ed25519
+          - -N
+          - ''
+          - -f
+          - "{{ control_instance_automation_private_key }}"
+          - -C
+          - private-cloud-instance-automation
+      args:
+        creates: "{{ control_instance_automation_private_key }}"
+      become_user: user1
+
+    - name: inner VM automation private key 권한 제한
+      ansible.builtin.file:
+        path: "{{ control_instance_automation_private_key }}"
+        owner: user1
+        group: user1
+        mode: '0600'
+
+    - name: inner VM automation public key 권한 설정
+      ansible.builtin.file:
+        path: "{{ control_instance_automation_public_key }}"
+        owner: user1
+        group: user1
+        mode: '0644'
 
     - name: MariaDB Python과 portal proxy 패키지 설치
       ansible.builtin.dnf:
@@ -337,6 +382,34 @@
         owner: user1
         group: user1
         mode: '0700'
+
+    - name: inner VM runtime inventory 경로 생성
+      ansible.builtin.file:
+        path: "{{ control_instance_inventory_directory }}"
+        state: directory
+        owner: user1
+        group: user1
+        mode: '0700'
+
+    - name: 빈 inner VM runtime inventory 초기화
+      ansible.builtin.copy:
+        dest: "{{ control_instance_inventory_file }}"
+        owner: user1
+        group: user1
+        mode: '0600'
+        force: false
+        content: |
+          {"instances": {"hosts": []}, "_meta": {"hostvars": {}}}
+
+    - name: inner VM SSH known hosts 파일 생성
+      ansible.builtin.file:
+        path: "{{ control_instance_known_hosts_file }}"
+        state: touch
+        owner: user1
+        group: user1
+        mode: '0600'
+        access_time: preserve
+        modification_time: preserve
 
     - name: private-cloud API systemd 서비스 등록
       ansible.builtin.copy:

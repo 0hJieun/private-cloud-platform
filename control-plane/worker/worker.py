@@ -8,6 +8,7 @@ compute를 선택하고 Ansible을 호출한다. HTTP 요청이 끊기거나 웹
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -25,6 +26,18 @@ API_DIRECTORY = REPOSITORY_ROOT / "control-plane" / "api"
 SCHEDULER_DIRECTORY = REPOSITORY_ROOT / "control-plane" / "scheduler"
 ANSIBLE_DIRECTORY = REPOSITORY_ROOT / "automation" / "ansible"
 WORK_DIRECTORY = Path(os.environ.get("PRIVATE_CLOUD_WORK_DIRECTORY", "/home/user1/.local/share/private-cloud/operations"))
+INSTANCE_AUTOMATION_PRIVATE_KEY = Path(
+    os.environ.get("PRIVATE_CLOUD_INSTANCE_AUTOMATION_PRIVATE_KEY", "/home/user1/.ssh/private-cloud-instance-automation")
+).expanduser()
+INSTANCE_AUTOMATION_PUBLIC_KEY = Path(
+    os.environ.get("PRIVATE_CLOUD_INSTANCE_AUTOMATION_PUBLIC_KEY", "/home/user1/.ssh/private-cloud-instance-automation.pub")
+).expanduser()
+RUNTIME_INVENTORY_PATH = Path(
+    os.environ.get("PRIVATE_CLOUD_INSTANCE_INVENTORY", "/home/user1/.local/share/private-cloud/ansible/instances.json")
+).expanduser()
+INSTANCE_KNOWN_HOSTS_PATH = Path(
+    os.environ.get("PRIVATE_CLOUD_INSTANCE_KNOWN_HOSTS", "/home/user1/.local/share/private-cloud/ansible/known_hosts")
+).expanduser()
 LEASE_FILE = Path("/var/lib/dhcpd/dhcpd.leases")
 
 sys.path[:0] = [str(API_DIRECTORY), str(SCHEDULER_DIRECTORY)]
@@ -61,6 +74,86 @@ def add_event(session, instance: Instance, operation: Optional[Operation], previ
             next_status=next_status,
             message=message,
         )
+    )
+
+
+def runtime_inventory_payload(instances: list[Instance]) -> dict:
+    """Ansible dynamic inventory script가 반환할 JSON을 만든다.
+
+    Git inventory에는 오래 유지되는 control/compute/storage만 둔다. VM은 DHCP 주소와
+    lifecycle이 바뀌므로 worker가 이 runtime JSON을 원자적으로 교체한다. JSON은 YAML의
+    부분집합이면서 Ansible dynamic inventory의 표준 형식이므로 문자열 escape도 안전하다.
+    """
+
+    hostvars: dict[str, dict[str, object]] = {}
+    for instance in instances:
+        if not instance.provider_ip:
+            continue
+        hostvars[instance.name] = {
+            "ansible_host": instance.provider_ip,
+            "ansible_user": instance.guest_username,
+            "ansible_become": True,
+            "ansible_ssh_private_key_file": str(INSTANCE_AUTOMATION_PRIVATE_KEY),
+            # VM은 DHCP IP를 재사용할 수 있다. worker가 create/delete 때 이 파일의
+            # 해당 IP fingerprint를 제거하고, 첫 Ansible 접속에서 TOFU 방식으로 새
+            # fingerprint를 기록한다. production에서는 SSH host certificate/CA를 쓴다.
+            "ansible_ssh_common_args": (
+                f"-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile={INSTANCE_KNOWN_HOSTS_PATH}"
+            ),
+            "private_cloud_instance_id": instance.id,
+            "private_cloud_monitoring_enabled": instance.monitoring_enabled,
+        }
+    return {
+        "instances": {"hosts": sorted(hostvars)},
+        "_meta": {"hostvars": hostvars},
+    }
+
+
+def sync_runtime_inventory() -> None:
+    """ACTIVE이며 새 automation key로 생성한 VM만 runtime inventory에 반영한다."""
+
+    with SessionLocal() as session:
+        instances = list(
+            session.scalars(
+                select(Instance)
+                .where(
+                    Instance.status == InstanceStatus.ACTIVE,
+                    Instance.automation_enrolled.is_(True),
+                    Instance.provider_ip.is_not(None),
+                    Instance.deleted_at.is_(None),
+                )
+                .order_by(Instance.name)
+            )
+        )
+        payload = runtime_inventory_payload(instances)
+
+    RUNTIME_INVENTORY_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary_path = RUNTIME_INVENTORY_PATH.with_suffix(".tmp")
+    temporary_path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    temporary_path.chmod(0o600)
+    os.replace(temporary_path, RUNTIME_INVENTORY_PATH)
+
+
+def sync_runtime_inventory_safely() -> None:
+    """inventory 동기화 문제로 이미 끝난 VM lifecycle 결과를 ERROR로 바꾸지 않는다."""
+
+    try:
+        sync_runtime_inventory()
+    except Exception as error:  # pragma: no cover - service filesystem failure defensive path
+        print(f"private-cloud runtime inventory sync failed: {error}", file=sys.stderr)
+
+
+def forget_instance_host_key(provider_ip: Optional[str]) -> None:
+    """삭제되거나 DHCP로 재사용된 VM IP의 lab TOFU fingerprint를 정리한다."""
+
+    if not provider_ip:
+        return
+    subprocess.run(
+        ["ssh-keygen", "-R", provider_ip, "-f", str(INSTANCE_KNOWN_HOSTS_PATH)],
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
     )
 
 
@@ -113,6 +206,9 @@ def set_create_placement(operation_id: str, compute_name: str) -> tuple[Instance
         previous = instance.status
         instance.status = InstanceStatus.PROVISIONING
         instance.assigned_compute_id = compute.id
+        # 이 worker가 호출할 새 provisioner는 automation public key도 seed에 넣는다.
+        # 배포 전부터 WAITING_FOR_IP였던 legacy VM은 false 상태를 보존한다.
+        instance.automation_enrolled = True
         instance.error_message = None
         compute.state = "READY"
         compute.last_seen_at = now()
@@ -162,6 +258,8 @@ def execute_provisioner(compute_name: str, instance: Instance, image: Image, own
         f"instance_monitoring_enabled={'true' if instance.monitoring_enabled else 'false'}",
         "-e",
         f"instance_owner_ssh_public_key_path={owner_key_path}",
+        "-e",
+        f"instance_automation_ssh_public_key_path={INSTANCE_AUTOMATION_PUBLIC_KEY}",
         str(ANSIBLE_DIRECTORY / "playbooks" / "provision-instance.yml"),
     ]
     result = subprocess.run(command, cwd=ANSIBLE_DIRECTORY, text=True, capture_output=True, check=False)
@@ -208,10 +306,15 @@ def mark_create_finished(operation_id: str, provider_ip: Optional[str]) -> None:
         previous = instance.status
         instance.provider_ip = provider_ip
         instance.status = InstanceStatus.ACTIVE if provider_ip else InstanceStatus.WAITING_FOR_IP
+        # set_create_placement에서 새 provisioner 대상임을 먼저 표시했다. DHCP IP까지
+        # 확인되고 이 flag가 true인 VM만 runtime inventory에 나타난다.
         operation.status = OperationStatus.SUCCEEDED
         operation.completed_at = now()
         message = "VM 생성이 완료되고 DHCP 주소를 확인했습니다." if provider_ip else "VM 생성은 완료됐고 DHCP 주소를 기다리고 있습니다."
         add_event(session, instance, operation, previous, instance.status, message)
+    if provider_ip:
+        forget_instance_host_key(provider_ip)
+    sync_runtime_inventory_safely()
 
 
 def execute_destroyer(compute_name: str, instance_name: str) -> None:
@@ -226,12 +329,14 @@ def execute_destroyer(compute_name: str, instance_name: str) -> None:
 
 
 def mark_delete_finished(operation_id: str) -> None:
+    provider_ip: Optional[str] = None
     with SessionLocal.begin() as session:
         operation = session.get(Operation, operation_id)
         instance = session.get(Instance, operation.instance_id) if operation else None
         if not operation or not instance:
             return
         previous = instance.status
+        provider_ip = instance.provider_ip
         instance.status = InstanceStatus.DELETED
         instance.active_name = None
         instance.provider_ip = None
@@ -239,6 +344,8 @@ def mark_delete_finished(operation_id: str) -> None:
         operation.status = OperationStatus.SUCCEEDED
         operation.completed_at = now()
         add_event(session, instance, operation, previous, InstanceStatus.DELETED, "VM domain과 인스턴스 디스크를 정상 삭제했습니다.")
+    forget_instance_host_key(provider_ip)
+    sync_runtime_inventory_safely()
 
 
 def mark_failed(operation_id: str, error: Exception) -> None:
@@ -254,6 +361,7 @@ def mark_failed(operation_id: str, error: Exception) -> None:
         operation.error_message = instance.error_message
         operation.completed_at = now()
         add_event(session, instance, operation, previous, InstanceStatus.ERROR, "worker 처리 중 오류가 발생했습니다.")
+    sync_runtime_inventory_safely()
 
 
 def reconcile_waiting_for_ip() -> None:
@@ -281,6 +389,8 @@ def reconcile_waiting_for_ip() -> None:
                     instance.status = InstanceStatus.ACTIVE
                     instance.provider_ip = provider_ip
                     add_event(session, instance, None, previous, InstanceStatus.ACTIVE, "DHCP 주소 확인이 완료됐습니다.")
+            forget_instance_host_key(provider_ip)
+            sync_runtime_inventory_safely()
 
 
 def process(operation_id: str) -> None:
@@ -337,6 +447,8 @@ def process(operation_id: str) -> None:
 def main() -> int:
     interval = max(int(os.environ.get("PRIVATE_CLOUD_WORKER_INTERVAL_SECONDS", "5")), 1)
     WORK_DIRECTORY.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # worker 재시작 뒤에도 MariaDB의 desired state에서 runtime inventory를 복구한다.
+    sync_runtime_inventory_safely()
     while True:
         reconcile_waiting_for_ip()
         operation_id = claim_next_operation()

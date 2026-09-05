@@ -96,6 +96,7 @@ class InstanceRead(BaseModel):
     requested_memory_mb: int
     requested_disk_gb: int
     monitoring_enabled: bool
+    automation_enrolled: bool
     status: str
     assigned_compute: Optional[str]
     provider_ip: Optional[str]

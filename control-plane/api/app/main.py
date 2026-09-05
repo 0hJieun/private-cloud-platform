@@ -98,6 +98,7 @@ def instance_read(instance: Instance, session: Session) -> InstanceRead:
         requested_memory_mb=instance.requested_memory_mb,
         requested_disk_gb=instance.requested_disk_gb,
         monitoring_enabled=instance.monitoring_enabled,
+        automation_enrolled=instance.automation_enrolled,
         status=instance.status,
         assigned_compute=compute.name if compute else None,
         provider_ip=instance.provider_ip,

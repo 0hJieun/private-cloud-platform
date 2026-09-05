@@ -20,7 +20,7 @@ control의 `dhcpd`는 provider NIC(`ens192`)에서만 동작하며 `172.16.8.151
 - `control`: Nginx portal, FastAPI, MariaDB, worker, scheduler, DHCP, Ansible, Prometheus, Grafana
 - `compute1`, `compute2`: libvirt/KVM, Open vSwitch
 - `storage1`, `storage2`: GlusterFS replica 2 데이터 노드
-- instance: cloud-init으로 초기화하고 사용자 SSH 공개키로 접속하는 libvirt guest
+- instance: cloud-init으로 초기화하고 사용자 SSH 공개키로 접속하며, 새 VM은 control 전용 automation 키로 Ansible 관리 대상에 자동 편입되는 libvirt guest
 
 ## Control-plane 요청 경로
 
@@ -49,7 +49,7 @@ control plane
       ├── qcow2 볼륨 준비
       ├── cloud-init seed 생성
       ├── DHCP lease 확인
-      └── 동적 Ansible inventory 생성
+      └── DHCP IP 확인 후 runtime Ansible inventory 갱신
 ```
 
 cloud-init은 instance가 부팅된 뒤 최초 설정을 수행합니다. VMware Workstation VM을 생성하는 주 도구는 아닙니다. Outer VM 이미지는 Packer로 만들고, guest 설정은 Ansible로 관리합니다. 호스트 수준의 VMware 네트워크 설정은 실행 환경에 따라 달라질 수 있습니다.

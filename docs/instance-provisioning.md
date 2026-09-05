@@ -16,10 +16,11 @@ control의 Ansible
 `disk.qcow2`는 읽기 전용 GenericCloud 베이스 이미지의 backing file을 참조한다. 따라서 각 인스턴스에는 운영 중 변경된 블록만 별도로 저장된다. 베이스 이미지는 수정하지 않으며, 인스턴스 삭제 전까지 overlay와 seed 파일을 보존한다.
 
 `seed.img`는 `CIDATA` 라벨을 가진 NoCloud 디스크다. 최초 부팅 시 cloud-init이 여기서 hostname,
-고정 guest 계정 `clouduser`, portal 사용자가 등록한 SSH 공개키를 읽는다. 비밀번호 SSH 접속과
-root SSH 접속은 사용하지 않는다. control → infrastructure 노드 자동화에는 별도의
-`private-cloud-ansible` 키를 사용하며, 이 키는 tenant VM에 주입하지 않는다. VM에는 portal
-사용자가 선택한 공개키만 주입한다.
+고정 guest 계정 `clouduser`, portal 사용자가 등록한 SSH 공개키와 control의 **inner VM 전용**
+automation 공개키를 읽는다. 비밀번호 SSH 접속과 root SSH 접속은 사용하지 않는다. control →
+compute/storage 자동화에 쓰는 `private-cloud-ansible` 키는 tenant VM에 주입하지 않는다. VM owner의
+접속 키와 `private-cloud-instance-automation` 키를 분리해, lifecycle 완료 뒤에만 runtime inventory의
+`instances` 그룹에 넣는다. 자세한 경계와 검증 방법은 [inner VM Ansible 자동 편입](instance-automation.md)을 참고한다.
 
 ## 실행 예시
 

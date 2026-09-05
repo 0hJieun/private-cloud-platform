@@ -94,6 +94,20 @@
                 <div><dt>생성 완료</dt><dd>이전 정책에서 만들어져 상태 점검 정보가 없는 VM입니다. 새 VM은 자동으로 상태 점검을 적용합니다.</dd></div>
               </dl>
             </dialog>
+            <dialog id="delete-instance-dialog" class="delete-instance-dialog" aria-labelledby="delete-instance-title">
+              <div class="confirmation-dialog-header">
+                <div><p class="eyebrow">DESTRUCTIVE ACTION</p><h2 id="delete-instance-title">VM을 삭제할까요?</h2></div>
+                <button id="delete-instance-close" class="quiet status-help-close" type="button" aria-label="삭제 확인 닫기">×</button>
+              </div>
+              <form id="delete-instance-form" class="confirmation-dialog-body">
+                <p>VM을 종료하고 연결된 디스크와 네트워크 자원을 정리합니다. <strong>이 작업은 되돌릴 수 없습니다.</strong></p>
+                <p class="confirmation-target">삭제할 VM: <code id="delete-instance-name">–</code></p>
+                <label for="delete-instance-confirmation"><span id="delete-instance-confirmation-label">계속하려면 VM 이름을 정확히 입력하세요.</span>
+                  <input id="delete-instance-confirmation" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+                </label>
+                <div class="confirmation-dialog-actions"><button id="delete-instance-cancel" class="quiet" type="button">취소</button><button id="delete-instance-submit" class="danger" type="submit" disabled>VM 삭제</button></div>
+              </form>
+            </dialog>
           </section>
 
           <section id="view-instance-detail" class="view" hidden>

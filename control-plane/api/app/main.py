@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import select, text
@@ -618,9 +618,16 @@ def list_operations(
 
 @app.delete("/v1/instances/{instance_id}", response_model=OperationRead, status_code=status.HTTP_202_ACCEPTED, tags=["instances"])
 def request_delete_instance(
-    instance_id: str, user: User = Depends(require_user), session: Session = Depends(get_session)
+    instance_id: str,
+    confirmed_instance_name: str = Header(alias="X-Confirm-Instance-Name"),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
 ) -> OperationRead:
     instance = owned_instance_or_404(instance_id, user, session)
+    # 화면의 재입력 확인만으로는 API 직접 호출을 막지 못한다. 서버도 현재 VM 이름과
+    # 대조해, 다른 VM을 잘못 삭제하는 요청을 거절한다.
+    if confirmed_instance_name != instance.name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="삭제 확인을 위해 VM 이름을 정확히 입력하세요.")
     if instance.status in {InstanceStatus.REQUESTED, InstanceStatus.SCHEDULING, InstanceStatus.PROVISIONING, InstanceStatus.DELETE_REQUESTED, InstanceStatus.DELETING}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 처리 중인 인스턴스입니다.")
     if instance.status == InstanceStatus.DELETED:

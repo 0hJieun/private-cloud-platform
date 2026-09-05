@@ -11,6 +11,7 @@ const state = {
   preflight: null,
   preflightSequence: 0,
   preflightTimer: null,
+  pendingDeleteInstance: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -467,14 +468,32 @@ async function refresh() {
   } finally { state.refreshing = false; }
 }
 
-async function deleteInstance(instance) {
-  if (!confirm(`${instance.name} VM과 연결된 overlay 디스크를 정상 종료 후 삭제할까요?`)) return;
+function deleteInstance(instance) {
+  state.pendingDeleteInstance = instance;
+  setText("#delete-instance-name", instance.name);
+  setText("#delete-instance-confirmation-label", `계속하려면 VM 이름 '${instance.name}'을(를) 정확히 입력하세요.`);
+  const input = $("#delete-instance-confirmation");
+  input.value = "";
+  $("#delete-instance-submit").disabled = true;
+  $("#delete-instance-dialog").showModal();
+  requestAnimationFrame(() => input.focus());
+}
+
+async function submitInstanceDeletion(event) {
+  event.preventDefault();
+  const instance = state.pendingDeleteInstance;
+  const input = $("#delete-instance-confirmation");
+  if (!instance || input.value !== instance.name) return;
+  const submit = $("#delete-instance-submit");
+  submit.disabled = true;
   try {
-    await api(`/v1/instances/${instance.id}`, { method: "DELETE" });
+    await api(`/v1/instances/${instance.id}`, { method: "DELETE", headers: { "X-Confirm-Instance-Name": instance.name } });
+    $("#delete-instance-dialog").close();
     message("삭제 작업을 큐에 등록했습니다.", "success");
     await refresh();
     showView("instances");
   } catch (error) { message(error.message, "error"); }
+  finally { submit.disabled = false; }
 }
 
 async function enterPortal() {
@@ -496,6 +515,13 @@ $("#logout-button").onclick = async () => { await api("/v1/auth/logout", { metho
 document.querySelectorAll(".nav-item,.view-switch").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelectorAll(".refresh-button").forEach((button) => button.addEventListener("click", () => refresh().catch((error) => message(error.message, "error"))));
 $("#detail-back").onclick = () => showView("instances");
+$("#delete-instance-close").onclick = () => $("#delete-instance-dialog").close();
+$("#delete-instance-cancel").onclick = () => $("#delete-instance-dialog").close();
+$("#delete-instance-confirmation").addEventListener("input", (event) => {
+  $("#delete-instance-submit").disabled = event.target.value !== state.pendingDeleteInstance?.name;
+});
+$("#delete-instance-dialog").addEventListener("close", () => { state.pendingDeleteInstance = null; });
+$("#delete-instance-form").addEventListener("submit", submitInstanceDeletion);
 
 $("#key-form").addEventListener("submit", async (event) => {
   event.preventDefault();

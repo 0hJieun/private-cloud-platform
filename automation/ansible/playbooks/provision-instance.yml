@@ -12,9 +12,8 @@
     instance_memory_mb: 1024
     instance_disk_size_gb: 10
     instance_volume_root: /var/lib/private-cloud/volumes
-    instance_cloud_image_path: >-
-      /var/lib/private-cloud/volumes/images/
-      Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
+    # YAML의 folded scalar는 줄 사이에 공백을 넣으므로 파일 경로는 한 줄로 유지한다.
+    instance_cloud_image_path: /var/lib/private-cloud/volumes/images/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
     instance_directory: "{{ instance_volume_root }}/instances/{{ instance_name }}"
     instance_seed_directory: "{{ instance_volume_root }}/seeds/{{ instance_name }}"
     instance_disk_path: "{{ instance_directory }}/disk.qcow2"

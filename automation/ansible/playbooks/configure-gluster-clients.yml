@@ -1,6 +1,6 @@
 ---
-- name: compute 노드의 GlusterFS 볼륨 마운트 구성
-  hosts: compute_nodes
+- name: control과 compute 노드의 GlusterFS 볼륨 마운트 구성
+  hosts: control_nodes:compute_nodes
   gather_facts: false
   become: true
 
@@ -30,7 +30,7 @@
           - "{{ gluster_sig_release_rpm_url }}"
         state: present
 
-    # 서버와 동일한 GlusterFS 11 계열 FUSE 클라이언트를 사용한다.
+    # control과 compute 모두 서버와 동일한 GlusterFS 11 계열 FUSE 클라이언트를 사용한다.
     - name: GlusterFS FUSE 클라이언트 설치
       ansible.builtin.dnf:
         name:

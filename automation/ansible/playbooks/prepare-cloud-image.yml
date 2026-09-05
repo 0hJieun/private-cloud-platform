@@ -1,0 +1,65 @@
+---
+- name: 공유 이미지 라이브러리의 Rocky GenericCloud 이미지 준비
+  hosts: control_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    cloud_image_directory: /var/lib/private-cloud/volumes/images
+    cloud_image_filename: Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
+    cloud_image_url: https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
+    cloud_image_sha256: 92c206cc6f790c61583247eefe87890f8828420662c17cacf247cec78ab4eec8
+
+  tasks:
+    - name: 공유 이미지 라이브러리의 GlusterFS 마운트 확인
+      ansible.builtin.command:
+        argv:
+          - findmnt
+          - -n
+          - -o
+          - FSTYPE
+          - /var/lib/private-cloud/volumes
+      register: control_gluster_mount
+      changed_when: false
+      failed_when: >-
+        control_gluster_mount.rc != 0 or
+        control_gluster_mount.stdout | trim != 'fuse.glusterfs'
+
+    - name: qcow2 검증 도구 설치
+      ansible.builtin.dnf:
+        name: qemu-img
+        state: present
+
+    - name: 공유 이미지 라이브러리 경로 생성
+      ansible.builtin.file:
+        path: "{{ cloud_image_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # 버전과 SHA-256을 고정해 같은 베이스 이미지를 재현 가능하게 관리한다.
+    - name: Rocky GenericCloud qcow2 이미지 다운로드와 무결성 검증
+      ansible.builtin.get_url:
+        url: "{{ cloud_image_url }}"
+        dest: "{{ cloud_image_directory }}/{{ cloud_image_filename }}"
+        checksum: "sha256:{{ cloud_image_sha256 }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: qcow2 이미지 형식 확인
+      ansible.builtin.command:
+        argv:
+          - qemu-img
+          - info
+          - --output=json
+          - "{{ cloud_image_directory }}/{{ cloud_image_filename }}"
+      register: cloud_image_info
+      changed_when: false
+
+    - name: qcow2 이미지 검증 결과 확인
+      ansible.builtin.assert:
+        that:
+          - "'qcow2' in cloud_image_info.stdout"
+        fail_msg: 공유 이미지 라이브러리에 qcow2 형식 이미지가 준비되지 않았습니다.

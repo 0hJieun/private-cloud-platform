@@ -56,6 +56,25 @@
         state: started
         enabled: true
 
+    # 인스턴스 디스크는 GlusterFS FUSE 마운트에 저장한다. 이 boolean이 없으면
+    # SELinux가 qemu 프로세스의 FUSE 파일 접근을 막아 VM 부팅이 실패할 수 있다.
+    - name: QEMU의 GlusterFS FUSE 접근 SELinux 정책 상태 확인
+      ansible.builtin.command:
+        argv:
+          - getsebool
+          - virt_use_fusefs
+      register: virt_use_fusefs_state
+      changed_when: false
+
+    - name: QEMU의 GlusterFS FUSE 볼륨 접근 허용
+      ansible.builtin.command:
+        argv:
+          - setsebool
+          - -P
+          - virt_use_fusefs
+          - 'on'
+      when: "'off' in virt_use_fusefs_state.stdout"
+
     - name: KVM 장치 확인
       ansible.builtin.command:
         argv:

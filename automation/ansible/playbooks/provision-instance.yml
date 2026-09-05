@@ -1,0 +1,233 @@
+---
+# 첫 인스턴스 검증용 프로비저너다. --limit으로 배치할 compute를 명시한다.
+# 이후 control-plane scheduler가 자원 기준으로 compute를 고른 뒤 같은 playbook을 호출한다.
+- name: libvirt/KVM 인스턴스 프로비저닝
+  hosts: compute_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    instance_ssh_user: user1
+    instance_vcpus: 1
+    instance_memory_mb: 1024
+    instance_disk_size_gb: 10
+    instance_volume_root: /var/lib/private-cloud/volumes
+    instance_cloud_image_path: >-
+      /var/lib/private-cloud/volumes/images/
+      Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
+    instance_directory: "{{ instance_volume_root }}/instances/{{ instance_name }}"
+    instance_seed_directory: "{{ instance_volume_root }}/seeds/{{ instance_name }}"
+    instance_disk_path: "{{ instance_directory }}/disk.qcow2"
+    instance_seed_path: "{{ instance_seed_directory }}/seed.img"
+    # lookup은 managed node가 아니라 control(Ansible controller)의 공개키 파일을 읽는다.
+    instance_ssh_public_key: >-
+      {{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') ~ '/.ssh/private-cloud-ansible.pub') | trim }}
+
+  pre_tasks:
+    - name: 인스턴스 요청값 검증
+      ansible.builtin.assert:
+        that:
+          - instance_name is match('^[a-z][a-z0-9-]{0,62}$')
+          - instance_vcpus | int >= 1
+          - instance_vcpus | int <= 2
+          - instance_memory_mb | int >= 512
+          - instance_memory_mb | int <= 2048
+          - instance_disk_size_gb | int >= 10
+          - instance_ssh_public_key is match('^ssh-ed25519 ')
+        fail_msg: >-
+          instance_name(소문자, 숫자, 하이픈), vCPU(1~2), 메모리(512~2048MB),
+          디스크(10GB 이상)를 확인하세요.
+
+    - name: 공유 GlusterFS 볼륨 마운트 확인
+      ansible.builtin.command:
+        argv:
+          - findmnt
+          - -n
+          - -o
+          - FSTYPE
+          - "{{ instance_volume_root }}"
+      register: instance_gluster_mount
+      changed_when: false
+      failed_when: >-
+        instance_gluster_mount.rc != 0 or
+        instance_gluster_mount.stdout | trim != 'fuse.glusterfs'
+
+    - name: QEMU의 FUSE 접근 SELinux 정책 확인
+      ansible.builtin.command:
+        argv:
+          - getsebool
+          - virt_use_fusefs
+      register: virt_use_fusefs_state
+      changed_when: false
+      failed_when: "'on' not in virt_use_fusefs_state.stdout"
+
+    - name: GenericCloud 베이스 이미지 확인
+      ansible.builtin.stat:
+        path: "{{ instance_cloud_image_path }}"
+      register: cloud_image_file
+
+    - name: 베이스 이미지 존재 여부 검증
+      ansible.builtin.assert:
+        that:
+          - cloud_image_file.stat.exists
+          - cloud_image_file.stat.isreg
+        fail_msg: 공유 GlusterFS 이미지 라이브러리에 Rocky GenericCloud qcow2 이미지가 없습니다.
+
+  tasks:
+    - name: 인스턴스 디스크와 cloud-init 시드 경로 생성
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - "{{ instance_directory }}"
+        - "{{ instance_seed_directory }}"
+
+    # base 이미지 자체는 수정하지 않는다. qcow2 overlay에는 인스턴스별 변경분만 기록된다.
+    - name: GenericCloud 베이스 이미지에서 인스턴스 overlay 디스크 생성
+      ansible.builtin.command:
+        argv:
+          - qemu-img
+          - create
+          - -f
+          - qcow2
+          - -F
+          - qcow2
+          - -b
+          - "{{ instance_cloud_image_path }}"
+          - "{{ instance_disk_path }}"
+          - "{{ instance_disk_size_gb }}G"
+        creates: "{{ instance_disk_path }}"
+
+    - name: QEMU가 인스턴스 overlay 디스크를 쓸 수 있도록 권한 설정
+      ansible.builtin.file:
+        path: "{{ instance_disk_path }}"
+        owner: qemu
+        group: qemu
+        mode: '0660'
+
+    - name: cloud-init user-data 작성
+      ansible.builtin.copy:
+        dest: "{{ instance_seed_directory }}/user-data"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          #cloud-config
+          hostname: {{ instance_name }}
+          manage_etc_hosts: true
+          users:
+            - name: {{ instance_ssh_user }}
+              groups: wheel
+              shell: /bin/bash
+              sudo: ALL=(ALL) NOPASSWD:ALL
+              ssh_authorized_keys:
+                - {{ instance_ssh_public_key }}
+          ssh_pwauth: false
+          disable_root: true
+
+    - name: cloud-init meta-data 작성
+      ansible.builtin.copy:
+        dest: "{{ instance_seed_directory }}/meta-data"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          instance-id: {{ instance_name }}
+          local-hostname: {{ instance_name }}
+
+    # NoCloud datasource는 CIDATA 라벨의 VFAT 디스크에서 user-data와 meta-data를 읽는다.
+    # 이미 존재하는 시드는 바꾸지 않아 재실행이 기존 VM의 최초 부팅 설정을 덮어쓰지 않는다.
+    - name: cloud-init NoCloud 시드 디스크 생성
+      ansible.builtin.shell: |
+        set -euo pipefail
+        mount_directory="$(mktemp -d)"
+        cleanup() {
+          mountpoint -q "$mount_directory" && umount "$mount_directory" || true
+          rmdir "$mount_directory" || true
+        }
+        trap cleanup EXIT
+        truncate -s 8M "{{ instance_seed_path }}"
+        mkfs.vfat -F 32 -n CIDATA "{{ instance_seed_path }}"
+        mount -o loop "{{ instance_seed_path }}" "$mount_directory"
+        install -m 0644 "{{ instance_seed_directory }}/user-data" "$mount_directory/user-data"
+        install -m 0644 "{{ instance_seed_directory }}/meta-data" "$mount_directory/meta-data"
+        sync
+      args:
+        creates: "{{ instance_seed_path }}"
+        executable: /bin/bash
+
+    - name: 기존 libvirt 도메인 존재 여부 확인
+      ansible.builtin.command:
+        argv:
+          - virsh
+          - -c
+          - qemu:///system
+          - dominfo
+          - "{{ instance_name }}"
+      register: instance_domain
+      changed_when: false
+      failed_when: false
+
+    # br-provider는 OVS bridge다. inner VM도 같은 provider L2 네트워크에서 DHCP 주소를 받는다.
+    - name: libvirt 인스턴스 정의와 부팅
+      ansible.builtin.command:
+        argv:
+          - virt-install
+          - --connect
+          - qemu:///system
+          - --name
+          - "{{ instance_name }}"
+          - --memory
+          - "{{ instance_memory_mb }}"
+          - --vcpus
+          - "{{ instance_vcpus }}"
+          - --os-variant
+          - rocky9
+          - --import
+          - --disk
+          - "path={{ instance_disk_path }},format=qcow2,bus=virtio"
+          - --disk
+          - "path={{ instance_seed_path }},format=raw,bus=virtio,readonly=on"
+          - --network
+          - bridge=br-provider,model=virtio,virtualport_type=openvswitch
+          - --graphics
+          - none
+          - --noautoconsole
+          - --autostart
+      when: instance_domain.rc != 0
+
+    - name: 인스턴스 부팅 상태 확인
+      ansible.builtin.command:
+        argv:
+          - virsh
+          - -c
+          - qemu:///system
+          - domstate
+          - "{{ instance_name }}"
+      register: instance_state
+      changed_when: false
+      retries: 15
+      delay: 2
+      until: instance_state.stdout | trim == 'running'
+
+    - name: 생성된 인스턴스 네트워크 인터페이스 확인
+      ansible.builtin.command:
+        argv:
+          - virsh
+          - -c
+          - qemu:///system
+          - domiflist
+          - "{{ instance_name }}"
+      register: instance_interfaces
+      changed_when: false
+
+    - name: 인스턴스 생성 결과 출력
+      ansible.builtin.debug:
+        msg:
+          - "{{ instance_name }}이(가) {{ inventory_hostname }}에서 실행 중입니다."
+          - "디스크: {{ instance_disk_path }}"
+          - "네트워크: br-provider (control DHCP 풀 172.16.8.151~239)"
+          - "{{ instance_interfaces.stdout }}"

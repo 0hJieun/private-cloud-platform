@@ -191,7 +191,9 @@
             - firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="{{ instance_monitoring_prometheus_address }}" port port="9100" protocol="tcp" accept'
             - firewall-cmd --reload
             - |
-              set -euo pipefail
+              # cloud-init runcmd는 Ubuntu에서 /bin/sh(dash)로 실행된다. 이 블록에는
+              # pipeline이 없으므로 pipefail 없이 POSIX shell에서 모두 동작하게 한다.
+              set -eu
               useradd --system --no-create-home --shell /sbin/nologin node_exporter || true
               archive=/var/tmp/{{ instance_node_exporter_archive }}
               curl --fail --location --retry 3 --silent --show-error "{{ instance_node_exporter_url }}" --output "$archive"

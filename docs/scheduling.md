@@ -24,7 +24,9 @@ Ansible의 역할은 선택된 노드에 원하는 상태를 적용하는 **프�
 | vCPU | 2 |
 | 메모리 | 4096MB |
 
-scheduler는 정의된 모든 libvirt domain(켜진 VM과 꺼진 VM 모두)의 vCPU·메모리를 예약량으로 합산한다. 요청을 수용할 수 있는 노드 중 VM 수, 예약 메모리, 예약 vCPU가 가장 적은 노드를 선택한다. 또한 `/proc/meminfo`의 실제 가용 메모리가 요청량보다 512MB 이상 여유 있는지 검사한다.
+scheduler는 정의된 모든 libvirt domain(켜진 VM과 꺼진 VM 모두)의 vCPU·메모리를 예약량으로 합산한다. 요청을 수용할 수 있는 노드 중 VM 수가 가장 적은 후보를 먼저 고르고, VM 수가 같으면 `/proc/stat`을 0.5초 간격으로 두 번 읽어 계산한 현재 CPU 사용률, 예약 메모리, 예약 vCPU 순으로 비교한다. 또한 `/proc/meminfo`의 실제 가용 메모리가 요청량보다 512MB 이상 여유 있는지 검사한다.
+
+CPU 사용률은 짧은 시간의 순간값이라 **수용 가능 여부를 거절하는 hard limit**으로 쓰지 않는다. hard limit은 inventory의 예약 vCPU·메모리와 실제 가용 메모리로 판단하고, CPU 사용률은 둘 다 수용 가능한 후보 사이의 tie-breaker로만 쓴다. 이 방식은 일시적인 CPU spike 때문에 정상 요청을 불필요하게 거절하지 않는다.
 
 이 방식은 단일 control 운영자 기준이다. 동시에 여러 요청이 들어올 때의 경쟁 조건은 DB reservation과 작업 큐를 추가하는 control-plane 단계에서 해결한다.
 

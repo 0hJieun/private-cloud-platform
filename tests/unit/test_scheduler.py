@@ -13,13 +13,14 @@ sys.modules[SPEC.name] = scheduler
 SPEC.loader.exec_module(scheduler)
 
 
-def capacity(name, domains, available_memory_mb=5000):
+def capacity(name, domains, available_memory_mb=5000, cpu_utilization_percent=0.0):
     return scheduler.Capacity(
         name=name,
         address="172.16.2.11",
         allocatable_vcpus=2,
         allocatable_memory_mb=4096,
         physical_vcpus=3,
+        cpu_utilization_percent=cpu_utilization_percent,
         available_memory_mb=available_memory_mb,
         domains=tuple(domains),
     )
@@ -45,6 +46,14 @@ class SelectNodeTests(unittest.TestCase):
 
         with self.assertRaises(RuntimeError):
             scheduler.select_node([full], 1, 512)
+
+    def test_uses_current_cpu_when_domain_count_is_equal(self):
+        busy = capacity("compute1", [], cpu_utilization_percent=72.5)
+        idle = capacity("compute2", [], cpu_utilization_percent=8.0)
+
+        selected = scheduler.select_node([busy, idle], 1, 1024)
+
+        self.assertEqual("compute2", selected.name)
 
 
 if __name__ == "__main__":

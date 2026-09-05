@@ -28,6 +28,7 @@ REMOTE_CAPACITY_SCRIPT = r'''
 import json
 import os
 import subprocess
+import time
 import xml.etree.ElementTree as ET
 
 
@@ -44,6 +45,31 @@ def memory_available_mb():
             if line.startswith("MemAvailable:"):
                 return int(line.split()[1]) // 1024
     raise RuntimeError("MemAvailable 값을 찾지 못했습니다.")
+
+
+def cpu_utilization_percent(sample_seconds=0.5):
+    """/proc/stat 두 시점의 idle 비율로 host CPU busy 비율을 계산한다.
+
+    load average는 실행 대기 작업 수라 CPU 사용률과 같지 않다. scheduler의 후보
+    tie-breaker에는 짧은 구간의 실제 busy 비율이 더 적합하다.
+    """
+
+    def read_cpu_times():
+        with open("/proc/stat", encoding="utf-8") as stat:
+            fields = next(line.split() for line in stat if line.startswith("cpu "))
+        values = [int(value) for value in fields[1:]]
+        total = sum(values)
+        idle = values[3] + (values[4] if len(values) > 4 else 0)  # idle + iowait
+        return total, idle
+
+    total_before, idle_before = read_cpu_times()
+    time.sleep(sample_seconds)
+    total_after, idle_after = read_cpu_times()
+    total_delta = total_after - total_before
+    idle_delta = idle_after - idle_before
+    if total_delta <= 0:
+        return 0.0
+    return round(100 * (1 - idle_delta / total_delta), 2)
 
 
 domains = []
@@ -67,6 +93,7 @@ print(
     json.dumps(
         {
             "physical_vcpus": os.cpu_count() or 0,
+            "cpu_utilization_percent": cpu_utilization_percent(),
             "available_memory_mb": memory_available_mb(),
             "domains": domains,
         }
@@ -84,6 +111,7 @@ class Capacity:
     allocatable_vcpus: int
     allocatable_memory_mb: int
     physical_vcpus: int
+    cpu_utilization_percent: float
     available_memory_mb: int
     domains: tuple[dict[str, Any], ...]
 
@@ -139,7 +167,7 @@ def load_compute_hosts(inventory_path: Path, ansible_directory: Path) -> list[di
 
 
 def inspect_capacity(host: dict[str, Any], private_key: Path, remote_user: str) -> Capacity:
-    """SSH key로 compute에 접속해 libvirt domain 예약량과 host 여유 메모리를 읽는다."""
+    """SSH key로 compute에 접속해 reservation·CPU·메모리 상태를 읽는다."""
 
     output = run(
         [
@@ -165,6 +193,7 @@ def inspect_capacity(host: dict[str, Any], private_key: Path, remote_user: str) 
         allocatable_vcpus=int(host["scheduler_allocatable_vcpus"]),
         allocatable_memory_mb=int(host["scheduler_allocatable_memory_mb"]),
         physical_vcpus=int(observed["physical_vcpus"]),
+        cpu_utilization_percent=float(observed["cpu_utilization_percent"]),
         available_memory_mb=int(observed["available_memory_mb"]),
         domains=tuple(observed["domains"]),
     )
@@ -173,7 +202,7 @@ def inspect_capacity(host: dict[str, Any], private_key: Path, remote_user: str) 
 def select_node(
     capacities: list[Capacity], request_vcpus: int, request_memory_mb: int
 ) -> Capacity:
-    """요청을 수용할 후보 중 예약된 VM 수·메모리·vCPU가 가장 적은 노드를 고른다."""
+    """수용 가능한 후보 중 VM 수·CPU 사용률·예약 자원이 가장 낮은 노드를 고른다."""
 
     candidates = [
         node
@@ -186,7 +215,7 @@ def select_node(
     if not candidates:
         details = "; ".join(
             f"{node.name}(여유 정책 {node.free_vcpus} vCPU, {node.free_memory_mb}MB; "
-            f"실제 가용 {node.available_memory_mb}MB)"
+            f"CPU {node.cpu_utilization_percent:.1f}%; 실제 가용 {node.available_memory_mb}MB)"
             for node in capacities
         )
         raise RuntimeError(f"요청을 수용할 compute가 없습니다. {details}")
@@ -195,6 +224,7 @@ def select_node(
         candidates,
         key=lambda node: (
             len(node.domains),
+            node.cpu_utilization_percent,
             node.allocated_memory_mb,
             node.allocated_vcpus,
             node.name,
@@ -220,6 +250,7 @@ def print_capacity(capacities: list[Capacity], selected: Optional[Capacity] = No
         print(
             f"- {node.name}: domain {len(node.domains)}개, "
             f"예약 여유 {node.free_vcpus} vCPU / {node.free_memory_mb}MB, "
+            f"CPU 사용률 {node.cpu_utilization_percent:.1f}%, "
             f"실제 가용 메모리 {node.available_memory_mb}MB{marker}"
         )
 

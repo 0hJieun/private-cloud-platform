@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+# Alembic executable은 .venv/bin에서 시작하므로 repository의 app package를 자동으로
+# 찾지 못한다. migration 파일 기준 한 단계 위(API project root)를 명시해 개발·Ansible
+# 모두 동일하게 `from app...` import를 해석하게 한다.
+API_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(API_PROJECT_ROOT))
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool

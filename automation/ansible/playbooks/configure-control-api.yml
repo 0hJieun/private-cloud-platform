@@ -5,8 +5,12 @@
   become: true
 
   vars:
-    control_repository_root: /home/user1/private-cloud-platform
-    control_api_directory: "{{ control_repository_root }}/control-plane/api"
+    # Git 작업본은 user1 홈에 유지한다. systemd는 SELinux가 서비스 실행에 허용하는
+    # /opt 릴리스 사본만 실행한다. 홈 디렉터리 권한을 완화하지 않기 위한 분리다.
+    control_source_repository_root: /home/user1/private-cloud-platform
+    control_release_root: /opt/private-cloud/release
+    control_source_api_directory: "{{ control_source_repository_root }}/control-plane/api"
+    control_api_directory: "{{ control_release_root }}/control-plane/api"
     control_api_venv: "{{ control_api_directory }}/.venv"
     control_api_environment_directory: /etc/private-cloud
     control_api_environment_file: "{{ control_api_environment_directory }}/api.env"
@@ -23,7 +27,7 @@
   tasks:
     - name: API 소스 코드 존재 여부 확인
       ansible.builtin.stat:
-        path: "{{ control_api_directory }}/app/main.py"
+        path: "{{ control_source_api_directory }}/app/main.py"
       register: control_api_source
 
     - name: API 소스 코드 검증
@@ -39,7 +43,32 @@
           - mariadb-server
           - python3-pip
           - nginx
+          - rsync
         state: present
+
+    - name: systemd용 private-cloud 릴리스 경로 생성
+      ansible.builtin.file:
+        path: "{{ control_release_root }}"
+        state: directory
+        owner: user1
+        group: user1
+        mode: '0755'
+
+    # .git과 로컬 virtualenv는 실행 릴리스에 포함하지 않는다. 매 배포마다 Git 작업본의
+    # 코드·Ansible·static asset을 같은 release 경로로 동기화해 API와 worker의 버전을 맞춘다.
+    - name: Git 작업본을 systemd 실행 릴리스로 동기화
+      ansible.builtin.command:
+        argv:
+          - rsync
+          - -a
+          - --delete
+          - --itemize-changes
+          - --exclude=.git
+          - --exclude=.venv
+          - "{{ control_source_repository_root }}/"
+          - "{{ control_release_root }}/"
+      register: control_release_sync
+      changed_when: control_release_sync.stdout | trim | length > 0
 
     - name: MariaDB 시작과 자동 시작 설정
       ansible.builtin.service:
@@ -282,9 +311,9 @@
           Type=simple
           User=user1
           Group=user1
-          WorkingDirectory={{ control_repository_root }}
+          WorkingDirectory={{ control_release_root }}
           EnvironmentFile={{ control_api_environment_file }}
-          ExecStart={{ control_api_venv }}/bin/python {{ control_repository_root }}/control-plane/worker/worker.py
+          ExecStart={{ control_api_venv }}/bin/python {{ control_release_root }}/control-plane/worker/worker.py
           Restart=on-failure
           RestartSec=3
 

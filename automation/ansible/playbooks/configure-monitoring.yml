@@ -140,6 +140,12 @@
     monitoring_prometheus_sha256: f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d
     monitoring_prometheus_release_directory: "/opt/prometheus-{{ monitoring_prometheus_version }}.linux-amd64"
     monitoring_grafana_environment_file: /etc/private-cloud/grafana.env
+    monitoring_alertmanager_version: 0.33.1
+    monitoring_alertmanager_archive: "alertmanager-{{ monitoring_alertmanager_version }}.linux-amd64.tar.gz"
+    monitoring_alertmanager_url: "https://github.com/prometheus/alertmanager/releases/download/v{{ monitoring_alertmanager_version }}/{{ monitoring_alertmanager_archive }}"
+    monitoring_alertmanager_checksums_url: "https://github.com/prometheus/alertmanager/releases/download/v{{ monitoring_alertmanager_version }}/sha256sums.txt"
+    monitoring_alertmanager_release_directory: "/opt/alertmanager-{{ monitoring_alertmanager_version }}.linux-amd64"
+    monitoring_alertmanager_secret_file: /etc/private-cloud/alertmanager.env
 
   tasks:
     - name: Prometheus system group 생성
@@ -154,6 +160,171 @@
         system: true
         shell: /sbin/nologin
         create_home: false
+
+    - name: Alertmanager system group 생성
+      ansible.builtin.group:
+        name: alertmanager
+        system: true
+
+    - name: Alertmanager system user 생성
+      ansible.builtin.user:
+        name: alertmanager
+        group: alertmanager
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+
+    - name: Alertmanager 설정과 데이터 경로 생성
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: '0755'
+      loop:
+        - { path: /etc/alertmanager, owner: root, group: alertmanager }
+        - { path: /var/lib/alertmanager, owner: alertmanager, group: alertmanager }
+        - { path: /etc/private-cloud, owner: root, group: root }
+
+    # archive와 release manifest는 같은 공식 GitHub release에서 받는다. unarchive 전에
+    # manifest의 해당 linux-amd64 checksum으로 archive 무결성을 검증한다.
+    - name: Alertmanager release archive 다운로드
+      ansible.builtin.get_url:
+        url: "{{ monitoring_alertmanager_url }}"
+        dest: "/var/tmp/{{ monitoring_alertmanager_archive }}"
+        owner: root
+        group: root
+        mode: '0644'
+        timeout: 180
+
+    - name: Alertmanager release checksum manifest 다운로드
+      ansible.builtin.get_url:
+        url: "{{ monitoring_alertmanager_checksums_url }}"
+        dest: "/var/tmp/alertmanager-{{ monitoring_alertmanager_version }}-sha256sums.txt"
+        owner: root
+        group: root
+        mode: '0644'
+        timeout: 60
+
+    - name: Alertmanager release archive checksum 검증
+      ansible.builtin.shell: |
+        set -euo pipefail
+        grep -F "  {{ monitoring_alertmanager_archive }}" "/var/tmp/alertmanager-{{ monitoring_alertmanager_version }}-sha256sums.txt" | sha256sum --check --status -
+      args:
+        chdir: /var/tmp
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Alertmanager release 압축 해제
+      ansible.builtin.unarchive:
+        src: "/var/tmp/{{ monitoring_alertmanager_archive }}"
+        dest: /opt
+        remote_src: true
+        creates: "{{ monitoring_alertmanager_release_directory }}/alertmanager"
+
+    - name: Alertmanager 현재 release symlink 설정
+      ansible.builtin.file:
+        src: "{{ monitoring_alertmanager_release_directory }}"
+        dest: /opt/alertmanager
+        state: link
+        force: true
+
+    - name: Slack webhook secret 파일 초기화
+      ansible.builtin.copy:
+        dest: "{{ monitoring_alertmanager_secret_file }}"
+        owner: root
+        group: root
+        mode: '0600'
+        force: false
+        content: |
+          # 이 값은 Git에 저장하지 않습니다. Slack Incoming Webhook URL을 로컬에서 입력하세요.
+          PRIVATE_CLOUD_SLACK_WEBHOOK_URL=
+      no_log: true
+
+    - name: Slack webhook secret 읽기
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a
+        source "{{ monitoring_alertmanager_secret_file }}"
+        set +a
+        printf '%s' "${PRIVATE_CLOUD_SLACK_WEBHOOK_URL:-}"
+      args:
+        executable: /bin/bash
+      register: monitoring_slack_webhook_url
+      changed_when: false
+      no_log: true
+
+    - name: Slack webhook URL 형식 검증
+      ansible.builtin.assert:
+        that:
+          - >-
+            monitoring_slack_webhook_url.stdout | trim | length == 0 or
+            monitoring_slack_webhook_url.stdout | trim is match('^https://hooks\\.slack\\.com/services/')
+        fail_msg: /etc/private-cloud/alertmanager.env의 Slack Incoming Webhook URL 형식을 확인하세요.
+      no_log: true
+
+    - name: Alertmanager 알림 라우팅 설정 배포
+      ansible.builtin.template:
+        src: "{{ control_repository_root }}/monitoring/alertmanager/alertmanager.yml.j2"
+        dest: /etc/alertmanager/alertmanager.yml
+        owner: root
+        group: alertmanager
+        mode: '0640'
+      no_log: true
+
+    - name: Alertmanager 설정 문법 검증
+      ansible.builtin.command:
+        argv:
+          - /opt/alertmanager/amtool
+          - check-config
+          - /etc/alertmanager/alertmanager.yml
+      changed_when: false
+
+    - name: Alertmanager systemd service 등록
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/alertmanager.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Prometheus Alertmanager
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          User=alertmanager
+          Group=alertmanager
+          ExecStart=/opt/alertmanager/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/var/lib/alertmanager --web.listen-address=127.0.0.1:9093
+          Restart=on-failure
+          RestartSec=3
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectHome=true
+          ProtectSystem=full
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Alertmanager systemd unit 다시 불러오기
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Alertmanager 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: alertmanager
+        state: restarted
+        enabled: true
+
+    - name: Alertmanager health endpoint 확인
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9093/-/healthy
+        status_code: 200
+      register: alertmanager_health
+      changed_when: false
+      retries: 10
+      delay: 2
+      until: alertmanager_health.status == 200
 
     - name: Prometheus release archive 다운로드와 checksum 검증
       ansible.builtin.get_url:
@@ -189,6 +360,22 @@
       loop:
         - /etc/prometheus
         - /var/lib/prometheus
+
+    - name: Prometheus alert rule 경로 생성
+      ansible.builtin.file:
+        path: /etc/prometheus/rules
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+
+    - name: private cloud alert rule 배포
+      ansible.builtin.copy:
+        src: "{{ control_repository_root }}/monitoring/prometheus/rules/private-cloud-alerts.yml"
+        dest: /etc/prometheus/rules/private-cloud-alerts.yml
+        owner: prometheus
+        group: prometheus
+        mode: '0644'
 
     - name: Prometheus HTTP service discovery token 읽기
       ansible.builtin.shell: |
@@ -229,6 +416,15 @@
           - /etc/prometheus/prometheus.yml
       changed_when: false
 
+    - name: Prometheus alert rule 문법 검증
+      ansible.builtin.command:
+        argv:
+          - /opt/prometheus/promtool
+          - check
+          - rules
+          - /etc/prometheus/rules/private-cloud-alerts.yml
+      changed_when: false
+
     - name: Prometheus systemd service 등록
       ansible.builtin.copy:
         dest: /etc/systemd/system/prometheus.service
@@ -238,8 +434,8 @@
         content: |
           [Unit]
           Description=Prometheus Monitoring Server
-          After=network-online.target
-          Wants=network-online.target
+          After=network-online.target alertmanager.service
+          Wants=network-online.target alertmanager.service
 
           [Service]
           User=prometheus

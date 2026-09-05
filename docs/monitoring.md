@@ -53,3 +53,25 @@ Grafana JSON dashboard는 운영자에게 여러 노드·모든 target의 관계
 한다. portal의 managed monitoring 카드는 사용자에게 필요한 현재 상태만 제한해 보인다.
 둘은 중복이 아니라 **운영자 observability**와 **사용자 self-service**라는 다른 제품
 경계다.
+
+## 경보와 장애 시연
+
+Prometheus rule은 상태를 평가하고, loopback Alertmanager가 grouping·silence·해결 알림을
+담당한다. Alertmanager는 Slack Incoming Webhook을 `/etc/private-cloud/alertmanager.env`의
+root 전용 파일에서만 읽는다. webhook 값은 Git, Ansible 출력, systemd unit에 저장하지 않는다.
+
+| 경보 | 조건 | 의미 |
+|---|---|---|
+| `ComputeNodeDown` | compute node exporter가 1분 이상 down | hypervisor 장애, 해당 VM 상태 점검 필요 |
+| `StorageNodeDown` | storage node exporter가 1분 이상 down | GlusterFS replica가 degraded일 수 있음 |
+| `ManagedInstanceExporterDown` | 관리형 VM exporter가 2분 이상 down | VM·네트워크·firewalld·exporter를 구분 점검 |
+| `GlusterBrickCapacityHigh` | brick 사용률 85% 초과가 10분 지속 | 이미지·overlay 디스크 용량 관리 필요 |
+
+`ManagedInstanceExporterDown`은 guest exporter 연결 상태 경보이지 libvirt domain의 절대적인
+실행 상태 판정은 아니다. VM domain의 running/shut off 상태까지 판단하려면 libvirt exporter
+또는 control-plane reconcile을 다음 단계로 추가한다.
+
+장애 시연은 VMware snapshot을 먼저 만든 뒤, 한 번에 한 node만 종료한다. compute 복구 뒤에는
+node exporter·libvirtd·Open vSwitch와 `--autostart` domain을 확인한다. storage replica 2는
+한 brick 장애를 견디는 degraded 동작과 복구 뒤 `gluster volume heal instance-volumes info summary`
+출력을 시연 범위로 삼는다. 2노드 replica는 fencing과 split-brain 방지를 갖춘 완전한 HA가 아니다.

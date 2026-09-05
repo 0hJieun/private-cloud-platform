@@ -26,7 +26,7 @@
 - GlusterFS 3노드/arbiter, fencing, 자동 장애 조치
 - 계획된 maintenance migration과 무중단 live migration
 - 다중 worker를 위한 queue locking 전략과 고가용 control plane
-- control-plane custom metrics, alert rule·notification
+- control-plane custom metrics와 libvirt domain 상태 reconcile
 - CI, 취약점 검사, TLS와 외부 공개 ingress
 - 보존 기간이 지난 삭제 instance의 archive/purge 배치 작업
 

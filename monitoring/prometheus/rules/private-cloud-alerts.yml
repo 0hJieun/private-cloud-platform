@@ -1,0 +1,48 @@
+groups:
+  - name: private-cloud.infrastructure
+    rules:
+      # compute 장애는 해당 hypervisor에서 동작하던 VM까지 영향을 받으므로 critical로
+      # 분류한다. 짧은 exporter 재시작을 제외하려고 1분 지속 뒤 firing한다.
+      - alert: ComputeNodeDown
+        expr: up{job="node",role="compute"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          scope: infrastructure
+        annotations:
+          summary: "Compute node {{ $labels.node }} is unreachable"
+          description: "Prometheus가 {{ $labels.node }} node exporter에 1분 이상 연결하지 못했습니다. 해당 hypervisor의 VM 상태를 확인하세요."
+
+      # replica 2는 한 storage 장애에도 사본 하나가 남지만, redundancy가 사라진
+      # degraded 상태다. 즉시 paging보다 warning으로 알리고 복구·heal을 유도한다.
+      - alert: StorageNodeDown
+        expr: up{job="node",role="storage"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          scope: storage
+        annotations:
+          summary: "Storage node {{ $labels.node }} is unreachable"
+          description: "GlusterFS replica가 degraded 상태일 수 있습니다. 노드 복구 뒤 gluster volume heal 상태를 확인하세요."
+
+      - alert: ManagedInstanceExporterDown
+        expr: up{job="instance"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          scope: guest
+        annotations:
+          summary: "Managed instance {{ $labels.cloud_instance_name }} exporter is unreachable"
+          description: "VM 전원, 네트워크, firewalld 또는 node_exporter 서비스를 확인하세요. 이 경보는 guest exporter 연결 상태를 의미합니다."
+
+      - alert: GlusterBrickCapacityHigh
+        expr: >-
+          100 * (1 - node_filesystem_avail_bytes{job="node",role="storage",mountpoint="/srv/gluster/brick1"}
+          / node_filesystem_size_bytes{job="node",role="storage",mountpoint="/srv/gluster/brick1"}) > 85
+        for: 10m
+        labels:
+          severity: warning
+          scope: storage
+        annotations:
+          summary: "Gluster brick on {{ $labels.node }} is above 85% capacity"
+          description: "Gluster brick 사용률이 10분 이상 85%를 초과했습니다. 이미지·instance overlay 용량을 점검하세요."

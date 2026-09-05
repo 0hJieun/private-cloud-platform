@@ -1,71 +1,51 @@
-# 프라이빗 클라우드 플랫폼
+# Private Cloud Platform
 
-KVM/libvirt, Open vSwitch, DHCP, storage, Ansible, cloud-init, Prometheus를 이용해 소형 프라이빗 클라우드 플랫폼을 구축하는 프로젝트입니다.
+VMware Workstation 위에 구축한 소형 IaaS control plane입니다. 사용자는 portal에서 SSH 공개키·이미지·flavor를 선택해 VM을 요청하고, control plane은 MariaDB 작업 큐, scheduler, Ansible, libvirt/KVM으로 비동기 생성·삭제를 처리합니다.
 
-## 주요 기능
+## Highlights
 
-- 자원 상태를 기반으로 한 인스턴스 배치
-- libvirt/KVM 기반 인스턴스 생명주기 관리
-- Open vSwitch provider network와 DHCP 구성
-- cloud-init 기반 초기화와 SSH public key 주입
-- Ansible 기반 outer 인프라 구성과 inner VM runtime inventory 관리
-- admin/member self-service portal과 SSH 공개키 등록
-- Prometheus/Grafana/Alertmanager 기반 관찰 가능성 및 Slack 알림 연동
-- 선택형 managed instance monitoring과 owner-scoped portal 지표
-- GlusterFS replica 기반 이미지·볼륨 관리
+- FastAPI/Nginx portal과 admin/member 역할 기반 self-service
+- MariaDB + Alembic 기반 요청, 작업, 상태 전이 audit trail
+- 예약 vCPU·메모리와 실제 host 상태를 함께 보는 compute scheduler
+- libvirt/KVM, Open vSwitch, control DHCP, cloud-init SSH key injection
+- GlusterFS replica 2 기반 shared image/instance volume
+- Prometheus, Grafana, Alertmanager 및 Slack 장애 알림
+- 새 inner VM의 Ansible runtime inventory와 SSH alias 자동 관리
 
-## 아키텍처
+## Architecture
 
 ```text
-control ── API / scheduler / MariaDB / DHCP / monitoring
-   ├── compute1 ── libvirt/KVM / Open vSwitch
-   ├── compute2 ── libvirt/KVM / Open vSwitch
-   ├── storage1 ── GlusterFS replica data
-   └── storage2 ── GlusterFS replica data
+Browser → Nginx portal → FastAPI → MariaDB (desired state / operation / event)
+                                  └→ worker → scheduler → Ansible → libvirt/KVM
+
+control ── DHCP / monitoring / control plane
+  ├── compute1, compute2 ── KVM/libvirt + OVS
+  └── storage1, storage2 ── GlusterFS replica 2
 ```
 
-portal은 control의 Nginx(`172.16.2.10:8080`)가 FastAPI(`127.0.0.1:8000`)를 reverse proxy하는 구조다. 이 lab은 관리망 HTTP로만 제공하며, 외부 공개 환경에서는 TLS termination·HTTPS-only cookie·별도 ingress 정책을 추가한다.
+Provider network는 `172.16.8.0/24`, management network는 `172.16.2.0/24`로 분리한다. FastAPI와 Prometheus/Alertmanager는 control의 loopback에만 열고, Nginx와 Grafana만 management network에서 제공한다.
 
-## 실제 저장소 구조
+## Repository layout
 
 ```text
-infra/packer/                 # Rocky 9 base image Packer 정의
-infra/vmware/                 # VMware lab.yml, outer VM 생성·사양 조정 PowerShell
-automation/ansible/           # inventory, Ansible playbook, runtime instance inventory adapter
-control-plane/api/            # FastAPI, SQLAlchemy model, Alembic migration, portal static UI
-control-plane/worker/         # DB operation을 claim해 Ansible/libvirt 작업을 실행하는 worker
-control-plane/scheduler/      # compute 배치 후보 선택 로직과 cloudctl
-monitoring/                   # Prometheus, Alertmanager, Grafana provisioning artifact
-tests/unit/                   # scheduler, migration, portal API 단위 테스트
-docs/                         # 설계·운영·시연 문서
+infra/             # Packer image definition, VMware outer-lab automation
+automation/        # Ansible inventory and infrastructure playbooks
+control-plane/     # API, Alembic schema, worker, scheduler, portal static assets
+monitoring/        # Prometheus rules, Alertmanager, Grafana dashboard provisioning
+tests/             # unit tests
+docs/              # architecture, data model, operations
 ```
 
-초기 scaffolding에서 남았던 빈 `admin-ui/`, `scripts/`, 별도 `control-plane/app/`·`migrations/`·`tests/`는
-제거했다. portal UI의 실제 위치는 `control-plane/api/app/static/`이며, `packer_cache/`는 Git이 무시하는
-Packer의 로컬 build cache이므로 소스 구조에는 포함하지 않는다.
+## Design documents
 
-## 문서
+- [Architecture](docs/architecture.md)
+- [MariaDB data model](docs/data-model.md)
+- [Operations, monitoring, and storage](docs/operations.md)
 
-- [아키텍처](docs/architecture.md)
-- [첫 KVM 인스턴스 프로비저닝](docs/instance-provisioning.md)
-- [최소 인스턴스 scheduler](docs/scheduling.md)
-- [`cloudctl` 운영 CLI](docs/cloudctl.md)
-- [구축 진행 현황과 다음 단계](docs/roadmap.md)
-- [Control API와 MariaDB 상태 저장소](docs/control-api.md)
-- [Control-plane 데이터 모델과 보존 정책](docs/data-model.md)
-- [GlusterFS 스토리지 설계와 운영 범위](docs/storage.md)
-- [관찰 가능성 설계](docs/monitoring.md)
-- [포털 UI와 관측 화면의 역할 분리](docs/portal-ui.md)
-- [inner VM Ansible 자동 편입](docs/instance-automation.md)
-- [최종 장애·DB 시연 Runbook](docs/final-demo-runbook.md)
+## Scope and limits
 
-## 현재 상태
+The lab demonstrates instance lifecycle automation, shared replicated storage, observability, and planned failure detection/recovery. It does not claim production-grade HA: GlusterFS replica 2 has no arbiter/fencing, MariaDB is single-node, and compute failure does not trigger automatic migration to another compute node.
 
-VMware 기반 lab에서 control·compute 2대·storage 2대, self-service portal, VM 생성/삭제,
-runtime Ansible inventory, Prometheus/Grafana/Alertmanager 구성을 코드화했다. 실제 Slack 통지는
-control의 root 전용 secret에 Incoming Webhook을 넣은 뒤 monitoring playbook을 적용해 활성화한다.
-남은 storage HA·migration·CI 범위는 [roadmap](docs/roadmap.md)에 의도적으로 분리해 둔다.
+## Security
 
-## 보안
-
-인증 정보, private key, `.env` 파일, VM 이미지, VM 실행 데이터, 모니터링 데이터는 이 저장소에 커밋하지 않습니다.
+Private keys, passwords, environment files, VM images, runtime data, and monitoring data are excluded from Git. Slack Webhook URLs are stored only in a root-readable secret file on control.

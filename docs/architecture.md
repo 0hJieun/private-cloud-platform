@@ -17,7 +17,7 @@ control의 `dhcpd`는 provider NIC(`ens192`)에서만 동작하며 `172.16.8.151
 
 ## 구성 요소
 
-- `control`: Nginx portal, FastAPI, MariaDB, worker, scheduler, DHCP, Ansible, Prometheus, Grafana
+- `control`: Nginx portal, FastAPI, MariaDB, worker, scheduler, DHCP, Ansible, Prometheus, Alertmanager, Grafana
 - `compute1`, `compute2`: libvirt/KVM, Open vSwitch
 - `storage1`, `storage2`: GlusterFS replica 2 데이터 노드
 - instance: cloud-init으로 초기화하고 사용자 SSH 공개키로 접속하며, 새 VM은 control 전용 automation 키로 Ansible 관리 대상에 자동 편입되는 libvirt guest
@@ -81,5 +81,5 @@ control에서 15초마다 5개 target을 수집하고 7일간 TSDB에 보관한�
 
 Managed monitoring을 선택한 instance는 cloud-init으로 node exporter를 설치하고 control
 Prometheus만 9100/tcp로 접근할 수 있게 한다. 일반 member는 Grafana datasource를 직접 사용하지
-않고, portal API가 owner 권한을 확인해 해당 VM의 지표만 반환한다. 자세한 흐름은
-[관찰 가능성 설계](monitoring.md)를 참고한다.
+않고, portal API가 owner 권한을 확인해 해당 VM의 지표만 반환한다. Alertmanager, GlusterFS 운영 범위와
+장애 판단 경계는 [운영과 관찰 가능성](operations.md)에 기록한다.

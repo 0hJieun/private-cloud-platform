@@ -244,6 +244,26 @@
         name: grafana
         state: present
 
+    # Grafana는 SELinux의 grafana_t 도메인으로 실행된다. Prometheus datasource가
+    # localhost:9090에도 접속하려면 전용 boolean이 필요하다. Enforcing을 유지한 채
+    # 이 연결만 허용한다.
+    - name: Grafana의 Prometheus TCP 연결 SELinux 정책 상태 확인
+      ansible.builtin.command:
+        argv:
+          - getsebool
+          - grafana_can_tcp_connect_prometheus_port
+      register: grafana_prometheus_selinux
+      changed_when: false
+
+    - name: Grafana의 Prometheus TCP 연결 SELinux 정책 영구 허용
+      ansible.builtin.command:
+        argv:
+          - setsebool
+          - -P
+          - grafana_can_tcp_connect_prometheus_port
+          - 'on'
+      when: "' --> on' not in grafana_prometheus_selinux.stdout"
+
     - name: Grafana 초기 secret 존재 여부 확인
       ansible.builtin.stat:
         path: "{{ monitoring_grafana_environment_file }}"

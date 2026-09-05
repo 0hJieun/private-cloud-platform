@@ -172,7 +172,11 @@
     - name: Alembic으로 control API database schema 적용
       ansible.builtin.shell: |
         set -euo pipefail
+        # EnvironmentFile의 KEY=value는 source만으로 child process에 전달되지 않는다.
+        # allexport를 켜서 Alembic/Python이 MariaDB URL을 os.environ에서 읽게 한다.
+        set -a
         source "{{ control_api_environment_file }}"
+        set +a
         "{{ control_api_venv }}/bin/alembic" -c "{{ control_api_directory }}/alembic.ini" upgrade head
       args:
         chdir: "{{ control_api_directory }}"
@@ -183,11 +187,24 @@
         path: "{{ control_api_bootstrap_marker }}"
       register: control_api_bootstrap_marker
 
+    - name: MariaDB 초기 계정 상태 확인
+      ansible.builtin.command:
+        argv:
+          - mariadb
+          - --protocol=socket
+          - --user=root
+          - --database={{ control_api_database_name }}
+          - --skip-column-names
+          - --batch
+          - --execute=SELECT COUNT(*) FROM users WHERE username IN ('admin', 'member1');
+      register: control_api_bootstrap_user_count
+      changed_when: false
+
     - name: 초기 계정 credential 파일 존재 여부 확인
       ansible.builtin.stat:
         path: "{{ control_api_initial_credentials_file }}"
       register: control_api_initial_credentials
-      when: not control_api_bootstrap_marker.stat.exists
+      when: control_api_bootstrap_user_count.stdout | trim | int < 2
 
     - name: 관리자 초기 비밀번호 생성
       ansible.builtin.command:
@@ -200,7 +217,7 @@
       changed_when: true
       no_log: true
       when:
-        - not control_api_bootstrap_marker.stat.exists
+        - control_api_bootstrap_user_count.stdout | trim | int < 2
         - not control_api_initial_credentials.stat.exists
 
     - name: member1 초기 비밀번호 생성
@@ -214,7 +231,7 @@
       changed_when: true
       no_log: true
       when:
-        - not control_api_bootstrap_marker.stat.exists
+        - control_api_bootstrap_user_count.stdout | trim | int < 2
         - not control_api_initial_credentials.stat.exists
 
     # 이 파일은 control의 user1만 읽을 수 있다. Git·Ansible stdout·systemd 환경에는
@@ -231,25 +248,26 @@
           PRIVATE_CLOUD_BOOTSTRAP_MEMBER_PASSWORD={{ control_api_member_password.stdout }}
       no_log: true
       when:
-        - not control_api_bootstrap_marker.stat.exists
+        - control_api_bootstrap_user_count.stdout | trim | int < 2
         - not control_api_initial_credentials.stat.exists
 
     - name: 초기 catalog와 admin member1 계정 생성
       ansible.builtin.shell: |
         set -euo pipefail
+        # API DB URL·session secret·bootstrap password 모두 Python child process에 전달한다.
+        set -a
         source "{{ control_api_environment_file }}"
         source "{{ control_api_initial_credentials_file }}"
-        # source로 읽은 KEY=value는 현재 셸의 변수일 뿐이다. Python subprocess가
-        # os.environ에서 읽을 수 있도록 명시적으로 환경 변수로 내보낸다.
-        export PRIVATE_CLOUD_BOOTSTRAP_ADMIN_PASSWORD
-        export PRIVATE_CLOUD_BOOTSTRAP_MEMBER_PASSWORD
+        set +a
         "{{ control_api_venv }}/bin/python" -m app.bootstrap
       args:
         chdir: "{{ control_api_directory }}"
         executable: /bin/bash
       # password는 root/user1 전용 파일을 source할 뿐 명령 인자·stdout으로 출력하지
       # 않는다. 이 task의 traceback은 남겨야 bootstrap 실패 원인을 진단할 수 있다.
-      when: not control_api_bootstrap_marker.stat.exists
+      # marker는 보조 기록일 뿐이다. 실제 MariaDB의 초기 계정 상태로 재실행 여부를
+      # 결정해 이전 배포 중단으로 marker만 남은 경우도 자동 복구한다.
+      when: control_api_bootstrap_user_count.stdout | trim | int < 2
 
     - name: 초기 catalog bootstrap 완료 marker 생성
       ansible.builtin.file:
@@ -368,6 +386,25 @@
           - nginx
           - -t
       changed_when: false
+
+    # nginx(httpd_t)가 loopback upstream에 연결하려면 SELinux의 명시적인 network
+    # connect 권한이 필요하다. 이 값이 off이면 Nginx는 502를 반환한다.
+    - name: Nginx reverse proxy SELinux 권한 상태 확인
+      ansible.builtin.command:
+        argv:
+          - getsebool
+          - httpd_can_network_connect
+      register: control_nginx_proxy_selinux
+      changed_when: false
+
+    - name: Nginx의 API upstream 연결 SELinux 권한 적용
+      ansible.builtin.command:
+        argv:
+          - setsebool
+          - -P
+          - httpd_can_network_connect
+          - 'on'
+      when: control_nginx_proxy_selinux.stdout is not search('on$')
 
     - name: Nginx 시작과 portal 설정 반영
       ansible.builtin.service:

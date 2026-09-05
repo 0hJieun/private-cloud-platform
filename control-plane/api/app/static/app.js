@@ -529,6 +529,13 @@ $("#user-form").addEventListener("submit", async (event) => {
 $("#instance-name").addEventListener("input", schedulePreflight);
 ["#instance-vcpus", "#instance-memory", "#instance-disk"].forEach((selector) => $(selector).addEventListener("change", schedulePreflight));
 
+const statusHelpDialog = $("#status-help-dialog");
+$("#status-help-button").addEventListener("click", () => statusHelpDialog.showModal());
+statusHelpDialog.addEventListener("click", (event) => {
+  const bounds = statusHelpDialog.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) statusHelpDialog.close();
+});
+
 (async () => {
   try { state.user = await api("/v1/me"); await enterPortal(); } catch (_) { /* 로그인 전 상태가 정상이다. */ }
 })();

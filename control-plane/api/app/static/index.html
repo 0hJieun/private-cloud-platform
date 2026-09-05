@@ -69,15 +69,31 @@
           </section>
 
           <section id="view-instances" class="view" hidden>
-            <div class="section-heading page-heading"><div><p class="eyebrow">INSTANCE CATALOG</p><div class="heading-title-row"><h2 id="instance-heading">내 인스턴스</h2><details class="status-help"><summary aria-label="VM 상태 안내" title="VM 상태 안내">i</summary><div class="status-help-popover" role="note"><strong>VM 상태 안내</strong><p><b>사용 가능</b> — VM 상태 점검이 정상입니다.</p><p><b>생성 중</b> — VM과 네트워크를 준비하고 있습니다.</p><p><b>호스트 연결 끊김</b> / <b>VM 응답 없음</b> — 표시된 원인에 맞춰 점검이 필요합니다.</p><p><b>생성 완료</b> — VM은 만들어졌고 상태 점검은 설정하지 않았습니다.</p><p><b>생성 실패</b> — 상세 화면의 오류 내용을 확인하세요.</p></div></details></div><p id="instance-subtitle" class="hint">생성 요청과 접속 정보를 확인합니다.</p></div><button class="quiet refresh-button">새로고침</button></div>
+            <div class="section-heading page-heading"><div><p class="eyebrow">INSTANCE CATALOG</p><h2 id="instance-heading">내 인스턴스</h2><p id="instance-subtitle" class="hint">생성 요청과 접속 정보를 확인합니다.</p></div><button class="quiet refresh-button">새로고침</button></div>
             <article class="panel">
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>이름</th><th id="owner-column-heading" hidden>소유자</th><th>상태</th><th>이미지</th><th>자원</th><th id="compute-column-heading" hidden>배치 노드</th><th>접속</th><th>작업</th></tr></thead>
+                  <thead><tr><th>이름</th><th id="owner-column-heading" hidden>소유자</th><th><span class="table-heading-with-help">상태 <button id="status-help-button" class="status-help-button" type="button" aria-label="VM 상태 안내 열기" aria-haspopup="dialog" aria-controls="status-help-dialog" title="VM 상태 안내">i</button></span></th><th>이미지</th><th>자원</th><th id="compute-column-heading" hidden>배치 노드</th><th>접속</th><th>작업</th></tr></thead>
                   <tbody id="instance-list"><tr><td colspan="6">불러오는 중…</td></tr></tbody>
                 </table>
               </div>
             </article>
+            <dialog id="status-help-dialog" class="status-help-dialog" aria-labelledby="status-help-title">
+              <form method="dialog" class="status-help-dialog-header">
+                <div><p class="eyebrow">INSTANCE STATUS</p><h2 id="status-help-title">VM 상태 안내</h2></div>
+                <button class="quiet status-help-close" type="submit" aria-label="상태 안내 닫기">×</button>
+              </form>
+              <dl class="status-help-list">
+                <div><dt>사용 가능</dt><dd>VM과 상태 점검이 모두 정상입니다. 등록한 SSH 키로 접속할 수 있습니다.</dd></div>
+                <div><dt>생성 중</dt><dd>배치, 디스크 복제, VM 기동, DHCP 주소 할당을 처리하고 있습니다. 잠시 후 새로고침하세요.</dd></div>
+                <div><dt>상태 확인 중</dt><dd>VM은 만들어졌고 첫 상태 정보가 수집되기를 기다리는 중입니다. 보통 기동 뒤 잠시 내에 바뀝니다.</dd></div>
+                <div><dt>호스트 연결 끊김</dt><dd>VM이 배치된 compute 노드의 응답을 확인할 수 없습니다. 관리자가 해당 노드를 점검해야 합니다.</dd></div>
+                <div><dt>VM 응답 없음</dt><dd>compute 노드는 정상이나 VM 내부 상태 점검이 응답하지 않습니다. VM 기동·네트워크 상태를 확인하세요.</dd></div>
+                <div><dt>생성 실패</dt><dd>생성 작업이 중단됐습니다. 상세 화면의 마지막 오류를 확인한 뒤 다시 요청하거나 관리자에게 문의하세요.</dd></div>
+                <div><dt>삭제 중</dt><dd>VM과 연결된 디스크·네트워크 자원을 정리하고 있습니다. 완료될 때까지 기다리세요.</dd></div>
+                <div><dt>생성 완료</dt><dd>이전 정책에서 만들어져 상태 점검 정보가 없는 VM입니다. 새 VM은 자동으로 상태 점검을 적용합니다.</dd></div>
+              </dl>
+            </dialog>
           </section>
 
           <section id="view-instance-detail" class="view" hidden>

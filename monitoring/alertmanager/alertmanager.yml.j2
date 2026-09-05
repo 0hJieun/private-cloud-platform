@@ -4,7 +4,7 @@ global:
 route:
   # Slack webhook을 아직 넣지 않은 최초 배포에서도 alert rule·UI는 동작한다.
   # secret을 등록하고 playbook을 재실행하면 receiver가 Slack으로 자동 전환된다.
-  receiver: "{{ 'slack-private-cloud' if (monitoring_slack_webhook_url | trim | length > 0) else 'discard' }}"
+  receiver: "{{ 'slack-private-cloud' if (monitoring_slack_webhook_url.stdout | trim | length > 0) else 'discard' }}"
   group_by: [alertname, scope, node, cloud_instance_name]
   group_wait: 15s
   group_interval: 5m
@@ -12,12 +12,12 @@ route:
 
 receivers:
   - name: discard
-{% if monitoring_slack_webhook_url | trim | length > 0 %}
+{% if monitoring_slack_webhook_url.stdout | trim | length > 0 %}
   - name: slack-private-cloud
     slack_configs:
       # to_json은 URL을 YAML string으로 안전하게 escaping한다. secret에 예상하지 못한
       # quote가 있어도 YAML 구조가 깨지지 않으며, 형식 검증 task가 URL 자체를 거절한다.
-      - api_url: {{ monitoring_slack_webhook_url | trim | to_json }}
+      - api_url: {{ monitoring_slack_webhook_url.stdout | trim | to_json }}
         send_resolved: true
         title: '{% raw %}{{ if eq .Status "firing" }}🚨 장애 감지{{ else }}✅ 복구 완료{{ end }}{% endraw %} · Private Cloud'
         # YAML double-quoted scalar의 \n escape는 Alertmanager에 실제 newline으로 전달된다.

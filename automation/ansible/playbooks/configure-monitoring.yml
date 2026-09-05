@@ -281,6 +281,8 @@
           - check-config
           - /etc/alertmanager/alertmanager.yml
       changed_when: false
+      # 실패한 config 안의 api_url이 Ansible stdout에 노출되지 않게 한다.
+      no_log: true
 
     - name: Alertmanager systemd service 등록
       ansible.builtin.copy:

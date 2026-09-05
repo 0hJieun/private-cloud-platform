@@ -46,7 +46,11 @@
           - instance_memory_mb | int >= 512
           - instance_memory_mb | int <= 2048
           - instance_disk_size_gb | int >= 10
-          - instance_owner_ssh_public_key is match('^ssh-(ed25519|rsa|ecdsa) ')
+          # worker는 공개키를 shell 인자가 아닌 안전한 임시 파일 경로로 전달한다.
+          # 실제 key format은 그 파일을 읽은 뒤 아래 별도 task에서 검증한다.
+          - >-
+            instance_owner_ssh_public_key_path | length > 0 or
+            instance_owner_ssh_public_key is match('^ssh-(ed25519|rsa|ecdsa) ')
         fail_msg: >-
           instance_name(소문자, 숫자, 하이픈), vCPU(1~2), 메모리(512~2048MB),
           디스크(10GB 이상), 소유자 SSH 공개키를 확인하세요.

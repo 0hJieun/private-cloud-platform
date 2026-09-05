@@ -11,6 +11,7 @@ from functools import lru_cache
 class Settings:
     database_url: str
     environment: str
+    session_secret: str
 
 
 @lru_cache
@@ -22,4 +23,6 @@ def get_settings() -> Settings:
             "PRIVATE_CLOUD_DATABASE_URL", "sqlite+pysqlite:///./private-cloud-development.db"
         ),
         environment=os.environ.get("PRIVATE_CLOUD_ENVIRONMENT", "development"),
+        # 배포 playbook은 난수 값을 EnvironmentFile에 저장한다.
+        session_secret=os.environ.get("PRIVATE_CLOUD_SESSION_SECRET", "development-only-change-me"),
     )

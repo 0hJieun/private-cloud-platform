@@ -10,9 +10,13 @@
     control_api_venv: "{{ control_api_directory }}/.venv"
     control_api_environment_directory: /etc/private-cloud
     control_api_environment_file: "{{ control_api_environment_directory }}/api.env"
+    control_api_bootstrap_marker: "{{ control_api_environment_directory }}/bootstrap.complete"
+    control_api_initial_credentials_file: /home/user1/private-cloud-initial-credentials.env
+    control_api_work_directory: /home/user1/.local/share/private-cloud/operations
     control_api_database_name: private_cloud
     control_api_database_user: privatecloud
     control_api_service_name: private-cloud-api
+    control_worker_service_name: private-cloud-worker
 
   tasks:
     - name: API 소스 코드 존재 여부 확인
@@ -65,6 +69,18 @@
       no_log: true
       when: not control_api_environment.stat.exists
 
+    - name: API session secret 생성
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - rand
+          - -hex
+          - '32'
+      register: control_api_session_secret
+      changed_when: true
+      no_log: true
+      when: not control_api_environment.stat.exists
+
     # hex 값만 사용하므로 DB URL 및 SQL 문자열에 안전하게 넣을 수 있다.
     - name: API 전용 database secret 파일 생성
       ansible.builtin.copy:
@@ -76,6 +92,8 @@
           PRIVATE_CLOUD_ENVIRONMENT=lab
           PRIVATE_CLOUD_DB_PASSWORD={{ control_api_database_password.stdout }}
           PRIVATE_CLOUD_DATABASE_URL=mysql+pymysql://{{ control_api_database_user }}:{{ control_api_database_password.stdout }}@127.0.0.1:3306/{{ control_api_database_name }}?charset=utf8mb4
+          PRIVATE_CLOUD_SESSION_SECRET={{ control_api_session_secret.stdout }}
+          PRIVATE_CLOUD_WORKER_INTERVAL_SECONDS=5
       no_log: true
       when: not control_api_environment.stat.exists
 
@@ -111,6 +129,102 @@
         executable: "{{ control_api_venv }}/bin/pip"
       become_user: user1
 
+    # API process는 metadata.create_all을 하지 않는다. 이 migration이 DB의 유일한
+    # schema 변경 이력이다. 이후 컬럼 변경도 새 revision으로만 추가한다.
+    - name: Alembic으로 control API database schema 적용
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source "{{ control_api_environment_file }}"
+        "{{ control_api_venv }}/bin/alembic" -c "{{ control_api_directory }}/alembic.ini" upgrade head
+      args:
+        chdir: "{{ control_api_directory }}"
+        executable: /bin/bash
+
+    - name: 초기 catalog와 계정 bootstrap 완료 여부 확인
+      ansible.builtin.stat:
+        path: "{{ control_api_bootstrap_marker }}"
+      register: control_api_bootstrap_marker
+
+    - name: 초기 계정 credential 파일 존재 여부 확인
+      ansible.builtin.stat:
+        path: "{{ control_api_initial_credentials_file }}"
+      register: control_api_initial_credentials
+      when: not control_api_bootstrap_marker.stat.exists
+
+    - name: 관리자 초기 비밀번호 생성
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - rand
+          - -hex
+          - '16'
+      register: control_api_admin_password
+      changed_when: true
+      no_log: true
+      when:
+        - not control_api_bootstrap_marker.stat.exists
+        - not control_api_initial_credentials.stat.exists
+
+    - name: member1 초기 비밀번호 생성
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - rand
+          - -hex
+          - '16'
+      register: control_api_member_password
+      changed_when: true
+      no_log: true
+      when:
+        - not control_api_bootstrap_marker.stat.exists
+        - not control_api_initial_credentials.stat.exists
+
+    # 이 파일은 control의 user1만 읽을 수 있다. Git·Ansible stdout·systemd 환경에는
+    # 평문 계정을 남기지 않는다. 최초 로그인 직후 웹에서 바꾸는 단계는 다음 UI에 둔다.
+    - name: 초기 admin과 member1 credential 파일 생성
+      ansible.builtin.copy:
+        dest: "{{ control_api_initial_credentials_file }}"
+        owner: user1
+        group: user1
+        mode: '0600'
+        content: |
+          # 첫 로그인 후 안전한 곳에 보관하고 이 파일은 삭제하세요.
+          PRIVATE_CLOUD_BOOTSTRAP_ADMIN_PASSWORD={{ control_api_admin_password.stdout }}
+          PRIVATE_CLOUD_BOOTSTRAP_MEMBER_PASSWORD={{ control_api_member_password.stdout }}
+      no_log: true
+      when:
+        - not control_api_bootstrap_marker.stat.exists
+        - not control_api_initial_credentials.stat.exists
+
+    - name: 초기 catalog와 admin member1 계정 생성
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source "{{ control_api_environment_file }}"
+        source "{{ control_api_initial_credentials_file }}"
+        "{{ control_api_venv }}/bin/python" -m app.bootstrap
+      args:
+        chdir: "{{ control_api_directory }}"
+        executable: /bin/bash
+      no_log: true
+      when: not control_api_bootstrap_marker.stat.exists
+
+    - name: 초기 catalog bootstrap 완료 marker 생성
+      ansible.builtin.file:
+        path: "{{ control_api_bootstrap_marker }}"
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+      when: not control_api_bootstrap_marker.stat.exists
+
+    - name: worker의 공개키 임시 작업 경로 생성
+      ansible.builtin.file:
+        path: "{{ control_api_work_directory }}"
+        state: directory
+        owner: user1
+        group: user1
+        mode: '0700'
+
     - name: private-cloud API systemd 서비스 등록
       ansible.builtin.copy:
         dest: "/etc/systemd/system/{{ control_api_service_name }}.service"
@@ -137,6 +251,32 @@
           [Install]
           WantedBy=multi-user.target
 
+    - name: private-cloud worker systemd 서비스 등록
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ control_worker_service_name }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Private Cloud Operation Worker
+          After=network-online.target mariadb.service {{ control_api_service_name }}.service
+          Wants=network-online.target
+          Requires=mariadb.service
+
+          [Service]
+          Type=simple
+          User=user1
+          Group=user1
+          WorkingDirectory={{ control_repository_root }}
+          EnvironmentFile={{ control_api_environment_file }}
+          ExecStart={{ control_api_venv }}/bin/python {{ control_repository_root }}/control-plane/worker/worker.py
+          Restart=on-failure
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+
     # 새 unit 파일을 처음 등록한 경우에도 아래 service task가 이름을 인식하도록 즉시 반영한다.
     - name: 새 systemd unit 다시 불러오기
       ansible.builtin.systemd:
@@ -147,6 +287,12 @@
     - name: private-cloud API 재시작과 자동 시작 설정
       ansible.builtin.service:
         name: "{{ control_api_service_name }}"
+        state: restarted
+        enabled: true
+
+    - name: private-cloud worker 재시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: "{{ control_worker_service_name }}"
         state: restarted
         enabled: true
 

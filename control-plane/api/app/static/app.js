@@ -43,6 +43,11 @@ function message(text = "", type = "") {
   target.className = `message ${type}`;
 }
 
+function clearRefreshError() {
+  const target = $("#app-message");
+  if (target.classList.contains("error")) message();
+}
+
 function make(tag, options = {}) {
   const element = document.createElement(tag);
   if (options.className) element.className = options.className;
@@ -420,6 +425,7 @@ async function refresh() {
     await Promise.all([loadKeysAndImages(), loadInstances(), loadAdmin()]);
     if (state.selectedInstance) await loadSelectedDetails();
     if (state.activeView === "create") schedulePreflight();
+    clearRefreshError();
   } finally { state.refreshing = false; }
 }
 

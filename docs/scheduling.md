@@ -1,6 +1,6 @@
 # 최소 인스턴스 scheduler
 
-이 단계의 scheduler는 control에서 실행하는 Python 운영 도구다. API와 MariaDB가 아직 없으므로 데이터베이스에 상태를 저장하지 않고, 실행 시점에 각 compute의 libvirt domain 정의를 읽어 배치 후보를 계산한다.
+현재 scheduler는 control-plane worker가 호출하는 Python 배치 결정 모듈이다. API가 MariaDB에 요청·예약 상태를 기록한 뒤 worker가 실행 시점의 각 compute libvirt domain과 host memory를 다시 읽어 배치 후보를 계산한다.
 
 ## 왜 Ansible과 분리하는가
 
@@ -13,7 +13,7 @@ Ansible의 역할은 선택된 노드에 원하는 상태를 적용하는 **프�
   → DHCP: inner VM에 provider IP 할당
 ```
 
-나중에 API와 MariaDB를 추가하면 scheduler는 요청 상태와 자원 reservation을 DB에 기록하고 worker에게 프로비저닝 작업을 전달한다. 이 도구는 그 이전 단계에서 동일한 경계와 호출 방식을 검증한다.
+API와 MariaDB는 요청 상태와 reservation을, worker는 작업 claim과 상태 전이를, scheduler는 compute 선택만 담당한다. 이 분리는 UI/API·작업 재시도·배치 정책을 서로 독립적으로 바꾸기 위한 것이다.
 
 ## 판단 기준
 
@@ -30,29 +30,17 @@ CPU 사용률은 짧은 시간의 순간값이라 **수용 가능 여부를 거�
 
 이 방식은 단일 control 운영자 기준이다. 동시에 여러 요청이 들어올 때의 경쟁 조건은 DB reservation과 작업 큐를 추가하는 control-plane 단계에서 해결한다.
 
-## 실행
+## 현재 호출 경로
 
-먼저 검증 모드로 선택 결과만 확인한다. `demo-web01`이 compute1에 있으므로 다음 요청은 compute2가 선택되어야 한다.
-
-```bash
-cd ~/private-cloud-platform
-
-python3 control-plane/scheduler/scheduler.py \
-  --name demo-web02 \
-  --vcpus 1 \
-  --memory-mb 1024 \
-  --disk-gb 10
-```
-
-출력이 맞으면 `--execute`로 Ansible 프로비저너를 호출한다.
+정상 경로는 portal의 생성 요청이다.
 
 ```bash
-python3 control-plane/scheduler/scheduler.py \
-  --name demo-web02 \
-  --vcpus 1 \
-  --memory-mb 1024 \
-  --disk-gb 10 \
-  --execute
+browser portal
+  → POST /v1/instances
+  → MariaDB operation(PENDING)
+  → private-cloud-worker
+  → scheduler.py
+  → provision-instance.yml
 ```
 
-이 코드는 control의 `~/.ssh/private-cloud-ansible` 키와 `automation/ansible/inventory/hosts.yml`을 사용한다. 개인키·비밀번호·DHCP lease 파일은 Git에 저장하지 않는다.
+`scheduler.py` 또는 `cloudctl`의 direct 실행은 초기 실습·단위 테스트를 위한 진단 경로로 남아 있다. 현재 portal lifecycle을 우회하므로 일상 VM 생성에는 사용하지 않는다.

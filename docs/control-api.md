@@ -1,6 +1,6 @@
 # Control API와 MariaDB 상태 저장소
 
-이 단계는 웹 화면보다 먼저 **API 요청을 영구적으로 저장하는 backend**를 만든다. API는 FastAPI, 상태 저장소는 MariaDB를 사용한다. API는 control의 `127.0.0.1:8000`에만 열리므로, 아직 VMnet2/provider 네트워크나 인터넷에 공개되지 않는다.
+이 문서는 현재 portal이 사용하는 **API 요청과 비동기 작업의 상태 저장 backend**를 설명한다. API는 FastAPI, 상태 저장소는 MariaDB를 사용한다. API는 control의 `127.0.0.1:8000`에만 열리고, Nginx가 management IP의 portal로 reverse proxy한다.
 
 ## 왜 요청 저장과 VM 생성을 분리하는가
 
@@ -71,7 +71,7 @@ playbook은 다음을 자동으로 수행한다.
 - API 전용 MariaDB 사용자·database 생성
 - control 로컬의 `/etc/private-cloud/api.env`에 난수 DB password 저장 (`0600`, Git 제외)
 - Alembic migration으로 7개 control-plane 테이블 생성
-- 초기 `admin`, `member1`, Rocky 이미지, compute1·compute2 카탈로그 생성
+- 초기 `admin`, `member1`, Rocky·Ubuntu 이미지, compute1·compute2 카탈로그 생성
 - Python virtual environment와 API 의존성 설치
 - `private-cloud-api.service`와 `private-cloud-worker.service`를 systemd에 등록
 

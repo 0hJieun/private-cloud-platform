@@ -1,6 +1,6 @@
 # 첫 KVM 인스턴스 프로비저닝
 
-이 문서는 control이 GenericCloud 베이스 이미지, cloud-init, libvirt를 연결해 inner VM 한 대를 만드는 흐름을 설명한다. 첫 검증에서는 사용자가 compute를 명시한다. 이후 control-plane scheduler가 자원을 비교해 compute를 선택하고 같은 프로비저너를 호출한다.
+이 문서는 control-plane worker가 GenericCloud 베이스 이미지, cloud-init, libvirt를 연결해 inner VM을 만드는 내부 프로비저닝 흐름을 설명한다. 정상 사용자 경로는 portal이며, worker가 scheduler로 compute를 선택한 뒤 같은 playbook을 호출한다.
 
 ## 구성 흐름
 
@@ -22,9 +22,9 @@ compute/storage 자동화에 쓰는 `private-cloud-ansible` 키는 tenant VM에 
 접속 키와 `private-cloud-instance-automation` 키를 분리해, lifecycle 완료 뒤에만 runtime inventory의
 `instances` 그룹에 넣는다. 자세한 경계와 검증 방법은 [inner VM Ansible 자동 편입](instance-automation.md)을 참고한다.
 
-## 실행 예시
+## 진단용 실행 예시
 
-control에서 다음을 실행하면 `demo-web01`을 `compute1`에 1 vCPU, 1GB RAM으로 생성한다.
+`provision-instance.yml`을 직접 실행하면 MariaDB operation·event와 portal lifecycle을 우회한다. 따라서 발표와 일반 운영에서는 portal을 사용한다. 아래는 playbook 자체를 점검하는 진단용 예시다.
 
 ```bash
 cd ~/private-cloud-platform/automation/ansible
@@ -32,7 +32,7 @@ cd ~/private-cloud-platform/automation/ansible
 # 공유 GlusterFS 위의 qcow2를 QEMU가 접근하도록 SELinux 정책을 적용한다.
 ansible-playbook playbooks/configure-compute-runtime.yml
 
-# 첫 검증은 scheduler 대신 대상 compute를 명시한다. OWNER_PUBLIC_KEY_PATH는 실제
+# 대상 compute를 명시한다. OWNER_PUBLIC_KEY_PATH는 실제
 # VM 소유자의 public key 파일이어야 하며, control의 infrastructure 자동화 키는 쓰지 않는다.
 ansible-playbook \
   --limit compute1 \

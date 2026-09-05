@@ -1,0 +1,81 @@
+---
+- name: Ubuntu 24.04 GenericCloud 이미지를 GlusterFS catalog에 등록
+  hosts: control_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    control_repository_root: /home/user1/private-cloud-platform
+    control_api_directory: "{{ control_repository_root }}/control-plane/api"
+    control_api_venv: "{{ control_api_directory }}/.venv"
+    control_api_environment_file: /etc/private-cloud/api.env
+    image_volume_root: /var/lib/private-cloud/volumes
+    ubuntu_image_id: ubuntu-24.04-genericcloud
+    ubuntu_image_name: Ubuntu-24.04-GenericCloud-20260826-amd64.img
+    ubuntu_image_path: "{{ image_volume_root }}/images/{{ ubuntu_image_name }}"
+    # `current`가 아니라 날짜가 고정된 official build를 쓴다. 값이 바뀌면 checksum에서
+    # 실패하므로 검토 없는 이미지 교체를 막을 수 있다.
+    ubuntu_image_url: https://cloud-images.ubuntu.com/noble/20260826/noble-server-cloudimg-amd64.img
+    ubuntu_image_sha256: d0fe84bb5f80853425fa6be28e2c106f30104c3cfe8611933f2e65c9b63f0e30
+
+  tasks:
+    - name: GlusterFS 이미지 library 마운트 확인
+      ansible.builtin.command:
+        argv:
+          - findmnt
+          - -n
+          - -o
+          - FSTYPE
+          - "{{ image_volume_root }}"
+      register: ubuntu_image_gluster_mount
+      changed_when: false
+      failed_when: >-
+        ubuntu_image_gluster_mount.rc != 0 or
+        ubuntu_image_gluster_mount.stdout | trim != 'fuse.glusterfs'
+
+    - name: 이미지 library 경로 생성
+      ansible.builtin.file:
+        path: "{{ image_volume_root }}/images"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ubuntu 공식 GenericCloud qcow2 다운로드와 checksum 검증
+      ansible.builtin.get_url:
+        url: "{{ ubuntu_image_url }}"
+        dest: "{{ ubuntu_image_path }}"
+        checksum: "sha256:{{ ubuntu_image_sha256 }}"
+        owner: root
+        group: root
+        mode: '0644'
+        timeout: 180
+
+    - name: Ubuntu image SHA256 재검증
+      ansible.builtin.stat:
+        path: "{{ ubuntu_image_path }}"
+        checksum_algorithm: sha256
+      register: ubuntu_image_file
+
+    - name: Ubuntu image checksum assertion
+      ansible.builtin.assert:
+        that:
+          - ubuntu_image_file.stat.exists
+          - ubuntu_image_file.stat.isreg
+          - ubuntu_image_file.stat.checksum == ubuntu_image_sha256
+        fail_msg: Ubuntu GenericCloud 이미지 SHA256 검증에 실패했습니다.
+
+    - name: 검증한 Ubuntu image를 control catalog에 등록
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source "{{ control_api_environment_file }}"
+        export PRIVATE_CLOUD_CATALOG_IMAGE_ID="{{ ubuntu_image_id }}"
+        export PRIVATE_CLOUD_CATALOG_DISPLAY_NAME="Ubuntu 24.04 LTS GenericCloud"
+        export PRIVATE_CLOUD_CATALOG_OS_FAMILY=ubuntu
+        export PRIVATE_CLOUD_CATALOG_OS_VERSION=24.04
+        export PRIVATE_CLOUD_CATALOG_SOURCE_PATH="{{ ubuntu_image_path }}"
+        export PRIVATE_CLOUD_CATALOG_SHA256="{{ ubuntu_image_sha256 }}"
+        "{{ control_api_venv }}/bin/python" -m app.catalog
+      args:
+        chdir: "{{ control_api_directory }}"
+        executable: /bin/bash

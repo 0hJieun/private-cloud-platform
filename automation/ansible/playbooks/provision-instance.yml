@@ -13,6 +13,9 @@
     instance_vcpus: 1
     instance_memory_mb: 1024
     instance_disk_size_gb: 10
+    # cloud image는 설치 media가 아닌 기존 disk를 import한다. generic은 Rocky와 Ubuntu
+    # 모두에 안전한 libvirt device profile이며 OS 이름을 잘못 가정하지 않는다.
+    instance_os_variant: generic
     instance_volume_root: /var/lib/private-cloud/volumes
     # YAML의 folded scalar는 줄 사이에 공백을 넣으므로 파일 경로는 한 줄로 유지한다.
     instance_cloud_image_path: /var/lib/private-cloud/volumes/images/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
@@ -226,7 +229,7 @@
           - --vcpus
           - "{{ instance_vcpus }}"
           - --os-variant
-          - rocky9
+          - "{{ instance_os_variant }}"
           - --import
           - --disk
           - "path={{ instance_disk_path }},format=qcow2,bus=virtio"

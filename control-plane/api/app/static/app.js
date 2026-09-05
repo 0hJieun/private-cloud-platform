@@ -1,4 +1,4 @@
-const state = { user: null, images: [], keys: [] };
+const state = { user: null, images: [], keys: [], monitoringInstance: null };
 const $ = (selector) => document.querySelector(selector);
 
 async function api(path, options = {}) {
@@ -18,6 +18,9 @@ function message(text = "", type = "") {
 function escapeText(value) { return String(value || ""); }
 function formatDate(value) { return value ? new Date(value).toLocaleString("ko-KR") : "–"; }
 function statusBadge(status) { const span = document.createElement("span"); span.className = `status status-${status}`; span.textContent = status; return span; }
+function formatPercent(value) { return value === null || value === undefined ? "수집 대기" : `${value.toFixed(1)}%`; }
+function formatRate(value) { if (value === null || value === undefined) return "수집 대기"; if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB/s`; if (value >= 1024) return `${(value / 1024).toFixed(1)} KB/s`; return `${value.toFixed(0)} B/s`; }
+function monitoringStateLabel(value) { return ({ UP: "정상 수집", DOWN: "수집 실패", WAITING_FOR_METRICS: "수집 대기", WAITING_FOR_INSTANCE: "VM 기동 대기", DISABLED: "비활성" })[value] || value; }
 
 function fillSelect(select, values, valueKey, label) {
   // refresh()가 주기적으로 실행되어도 사용자가 고른 값을 유지한다.
@@ -47,6 +50,7 @@ async function loadInstances() {
     const cells = [instance.name, null, instance.image_id, instance.assigned_compute || "scheduler 대기", instance.provider_ip ? `${instance.guest_username}@${instance.provider_ip}` : "IP 대기"];
     cells.forEach((value, index) => { const cell = document.createElement("td"); if (index === 1) cell.append(statusBadge(instance.status)); else cell.textContent = escapeText(value); row.append(cell); });
     const actions = document.createElement("td");
+    if (instance.monitoring_enabled) { const monitoring = document.createElement("button"); monitoring.className = "quiet"; monitoring.textContent = "모니터링"; monitoring.onclick = () => loadMonitoring(instance); actions.append(monitoring); }
     if (["ACTIVE", "ERROR"].includes(instance.status)) { const button = document.createElement("button"); button.className = "danger"; button.textContent = "삭제"; button.onclick = () => deleteInstance(instance); actions.append(button); }
     else { actions.textContent = "처리 중"; }
     row.append(actions); body.append(row);
@@ -69,14 +73,34 @@ async function loadAdmin() {
   users.forEach((user) => { const row = document.createElement("tr"); [user.username, user.role, user.is_active ? "활성" : "비활성", formatDate(user.created_at)].forEach((value) => { const cell = document.createElement("td"); cell.textContent = value; row.append(cell); }); userList.append(row); });
 }
 
-async function refresh() { await Promise.all([loadKeysAndImages(), loadInstances(), loadAdmin()]); }
+async function loadMonitoring(instance, keepOpen = true) {
+  const data = await api(`/v1/instances/${instance.id}/monitoring`);
+  state.monitoringInstance = instance;
+  $("#monitoring-title").textContent = `${instance.name} 모니터링`;
+  $("#monitoring-state").textContent = monitoringStateLabel(data.state);
+  $("#monitoring-cpu").textContent = formatPercent(data.cpu_percent);
+  $("#monitoring-memory").textContent = formatPercent(data.memory_percent);
+  $("#monitoring-disk").textContent = formatPercent(data.root_disk_percent);
+  $("#monitoring-network").textContent = `${formatRate(data.network_receive_bytes_per_second)} / ${formatRate(data.network_transmit_bytes_per_second)}`;
+  $("#monitoring-description").textContent = data.enabled
+    ? `Prometheus가 ${data.provider_ip || "할당 대기"}의 exporter를 control에서만 수집합니다.`
+    : "이 VM은 생성할 때 관리형 모니터링을 선택하지 않았습니다.";
+  $("#monitoring-sampled-at").textContent = data.sampled_at ? `마지막 exporter 표본: ${formatDate(data.sampled_at)}` : "첫 표본은 VM 기동과 Prometheus 발견 뒤 표시됩니다.";
+  if (keepOpen) $("#monitoring-panel").hidden = false;
+}
+
+async function refresh() {
+  await Promise.all([loadKeysAndImages(), loadInstances(), loadAdmin()]);
+  if (state.monitoringInstance) await loadMonitoring(state.monitoringInstance, false);
+}
 async function deleteInstance(instance) { if (!confirm(`${instance.name} VM과 연결된 디스크를 정상 종료 후 삭제할까요?`)) return; try { await api(`/v1/instances/${instance.id}`, { method: "DELETE" }); message("삭제 작업을 큐에 등록했습니다.", "success"); await refresh(); } catch (error) { message(error.message, "error"); } }
 
 $("#login-form").addEventListener("submit", async (event) => { event.preventDefault(); try { state.user = await api("/v1/auth/login", { method: "POST", body: JSON.stringify({ username: $("#login-username").value, password: $("#login-password").value }) }); $("#login-view").hidden = true; $("#app-view").hidden = false; $("#current-user").textContent = `${state.user.username} (${state.user.role})`; const admin = state.user.role === "admin"; $("#admin-overview").hidden = !admin; $("#admin-users").hidden = !admin; $("#instance-heading").textContent = admin ? "전체 VM" : "내 VM"; await refresh(); } catch (error) { $("#login-message").textContent = error.message; } });
 $("#logout-button").onclick = async () => { await api("/v1/auth/logout", { method: "POST" }); location.reload(); };
 $("#key-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/v1/ssh-keys", { method: "POST", body: JSON.stringify({ name: $("#key-name").value, public_key: $("#key-value").value }) }); event.target.reset(); message("공개키를 등록했습니다.", "success"); await loadKeysAndImages(); } catch (error) { message(error.message, "error"); } });
-$("#instance-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/v1/instances", { method: "POST", body: JSON.stringify({ name: $("#instance-name").value, image_id: $("#instance-image").value, ssh_public_key_id: $("#instance-key").value, vcpus: Number($("#instance-vcpus").value), memory_mb: Number($("#instance-memory").value), disk_gb: Number($("#instance-disk").value) }) }); event.target.reset(); message("VM 생성 작업을 큐에 등록했습니다. 상태가 ACTIVE가 될 때까지 잠시 기다리세요.", "success"); await loadInstances(); } catch (error) { message(error.message, "error"); } });
+$("#instance-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/v1/instances", { method: "POST", body: JSON.stringify({ name: $("#instance-name").value, image_id: $("#instance-image").value, ssh_public_key_id: $("#instance-key").value, vcpus: Number($("#instance-vcpus").value), memory_mb: Number($("#instance-memory").value), disk_gb: Number($("#instance-disk").value), monitoring_enabled: $("#instance-monitoring").checked }) }); event.target.reset(); message("VM 생성 작업을 큐에 등록했습니다. 상태가 ACTIVE가 될 때까지 잠시 기다리세요.", "success"); await loadInstances(); } catch (error) { message(error.message, "error"); } });
 $("#user-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/v1/users", { method: "POST", body: JSON.stringify({ username: $("#new-username").value, password: $("#new-password").value, role: $("#new-role").value }) }); event.target.reset(); message("사용자를 생성했습니다.", "success"); await loadAdmin(); } catch (error) { message(error.message, "error"); } });
+$("#monitoring-close").onclick = () => { $("#monitoring-panel").hidden = true; state.monitoringInstance = null; };
 document.querySelectorAll(".refresh-button").forEach((button) => button.addEventListener("click", () => refresh().catch((error) => message(error.message, "error"))));
 (async () => { try { state.user = await api("/v1/me"); $("#login-view").hidden = true; $("#app-view").hidden = false; $("#current-user").textContent = `${state.user.username} (${state.user.role})`; const admin = state.user.role === "admin"; $("#admin-overview").hidden = !admin; $("#admin-users").hidden = !admin; $("#instance-heading").textContent = admin ? "전체 VM" : "내 VM"; await refresh(); } catch (_) { /* 로그인 전 상태가 정상이다. */ } })();
 setInterval(() => { if (state.user) refresh().catch(() => {}); }, 5000);

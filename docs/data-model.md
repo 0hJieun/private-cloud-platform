@@ -32,7 +32,7 @@ erDiagram
 | `ssh_public_keys` | `owner_id`, `name`, `public_key`, `fingerprint`, `is_active` | 사용자가 가져온 public key만 보관. private key는 절대 DB에 저장하지 않음 |
 | `images` | `id`, OS 정보, `source_path`, `sha256`, `is_enabled` | GlusterFS 이미지 라이브러리의 검증된 catalog metadata. 이미지 blob 자체는 DB에 넣지 않음 |
 | `compute_nodes` | 관리/provider IP, `allocatable_vcpus`, `allocatable_memory_mb`, `state` | scheduler가 참조하는 배치 후보와 보수적 resource limit |
-| `instances` | owner/image/key/compute FK, 요청 자원, 상태, IP, `deleted_at` | 한 VM의 desired state·실제 배치·생명주기를 보관하는 원장 |
+| `instances` | owner/image/key/compute FK, 요청 자원, `monitoring_enabled`, 상태, IP, `deleted_at` | 한 VM의 desired state·실제 배치·생명주기를 보관하는 원장 |
 | `operations` | `instance_id`, CREATE/DELETE, PENDING/RUNNING/SUCCEEDED/FAILED, `attempts` | HTTP 요청과 오래 걸리는 worker 실행을 분리하는 durable queue |
 | `instance_events` | 이전/다음 상태, message, operation FK, 시각 | 사람이 읽을 수 있는 상태 전이·오류 audit trail |
 | `alembic_version` | 적용 revision | domain data가 아니라 현재 DB schema version을 기록하는 Alembic 관리 table |
@@ -64,6 +64,12 @@ instance_events.operation_id   → operations.id
 `instances.name`은 이력 조회용 일반 이름이고, `active_name`이 실제 unique key다. 삭제가 성공하면
 worker는 `active_name = NULL`, `deleted_at = 현재 시각`, `status = DELETED`로 바꾼다. 따라서 같은
 사용자든 다른 사용자든 과거 이름은 보존하면서 새 VM에서 이름을 재사용할 수 있다.
+
+`instances.monitoring_enabled`는 guest OS node exporter를 설치하고 Prometheus target으로
+등록할지 결정하는 owner 선택값이다. 기본값은 `false`이며, 기존 VM을 동의 없이 monitoring
+대상으로 바꾸지 않는다. VM별 target은 별도 table에 중복 저장하지 않는다. provider IP와
+lifecycle의 source of truth가 이미 `instances`이므로, Prometheus HTTP service discovery가
+`ACTIVE + monitoring_enabled + provider_ip` 조건을 API에서 직접 읽는다.
 
 ## 생성·삭제 transaction과 상태 전이
 

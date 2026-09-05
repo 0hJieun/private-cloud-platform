@@ -114,6 +114,9 @@ class Instance(Base):
     requested_vcpus: Mapped[int] = mapped_column(Integer, nullable=False)
     requested_memory_mb: Mapped[int] = mapped_column(Integer, nullable=False)
     requested_disk_gb: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 테넌트 OS 내부 agent는 기본값으로 설치하지 않는다. 사용자가 관리형 모니터링을
+    # 명시적으로 선택한 instance만 Prometheus target으로 등록한다.
+    monitoring_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=InstanceStatus.REQUESTED)
     assigned_compute_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     provider_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)

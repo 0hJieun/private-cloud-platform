@@ -61,6 +61,7 @@ class InstanceCreate(BaseModel):
     vcpus: int = Field(default=1, ge=1, le=2)
     memory_mb: int = Field(default=1024, ge=512, le=2048)
     disk_gb: int = Field(default=10, ge=10, le=100)
+    monitoring_enabled: bool = False
 
 
 class InstanceRead(BaseModel):
@@ -71,6 +72,7 @@ class InstanceRead(BaseModel):
     requested_vcpus: int
     requested_memory_mb: int
     requested_disk_gb: int
+    monitoring_enabled: bool
     status: str
     assigned_compute: Optional[str]
     provider_ip: Optional[str]
@@ -78,6 +80,20 @@ class InstanceRead(BaseModel):
     error_message: Optional[str]
     created_at: datetime
     updated_at: datetime
+
+
+class InstanceMonitoringRead(BaseModel):
+    """인증된 소유자에게만 노출하는 guest OS 수준의 현재 지표."""
+
+    enabled: bool
+    state: str
+    provider_ip: Optional[str]
+    sampled_at: Optional[datetime]
+    cpu_percent: Optional[float]
+    memory_percent: Optional[float]
+    root_disk_percent: Optional[float]
+    network_receive_bytes_per_second: Optional[float]
+    network_transmit_bytes_per_second: Optional[float]
 
 
 class OperationRead(BaseModel):

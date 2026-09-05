@@ -11,3 +11,13 @@ scrape_configs:
           node: '{{ host }}'
           role: '{{ hostvars[host].monitoring_role }}'
 {% endfor %}
+
+  # instance target은 고정 YAML에 손으로 추가하지 않는다. portal API가 ACTIVE 상태이면서
+  # monitoring_enabled=true인 VM만 DB에서 골라 반환하고 Prometheus가 30초마다 갱신한다.
+  - job_name: instance
+    http_sd_configs:
+      - url: http://127.0.0.1:8000/internal/prometheus/instance-targets
+        refresh_interval: 30s
+        authorization:
+          type: Bearer
+          credentials: '{{ monitoring_instance_discovery_token }}'

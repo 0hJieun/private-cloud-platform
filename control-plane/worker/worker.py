@@ -125,6 +125,7 @@ def set_create_placement(operation_id: str, compute_name: str) -> tuple[Instance
             requested_vcpus=instance.requested_vcpus,
             requested_memory_mb=instance.requested_memory_mb,
             requested_disk_gb=instance.requested_disk_gb,
+            monitoring_enabled=instance.monitoring_enabled,
         )
         detached_image = Image(id=image.id, source_path=image.source_path, display_name=image.display_name, os_family=image.os_family, os_version=image.os_version, disk_format=image.disk_format, sha256=image.sha256)
         detached_key = SshPublicKey(id=ssh_key.id, public_key=ssh_key.public_key, name=ssh_key.name, owner_id=ssh_key.owner_id, fingerprint=ssh_key.fingerprint)
@@ -157,6 +158,8 @@ def execute_provisioner(compute_name: str, instance: Instance, image: Image, own
         f"instance_cloud_image_path={image.source_path}",
         "-e",
         "instance_ssh_user=clouduser",
+        "-e",
+        f"instance_monitoring_enabled={'true' if instance.monitoring_enabled else 'false'}",
         "-e",
         f"instance_owner_ssh_public_key_path={owner_key_path}",
         str(ANSIBLE_DIRECTORY / "playbooks" / "provision-instance.yml"),

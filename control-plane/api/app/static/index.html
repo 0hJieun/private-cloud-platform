@@ -72,6 +72,7 @@
                 <label>메모리 <select id="instance-memory"><option value="1024">1024 MB</option><option value="2048">2048 MB</option></select></label>
                 <label>디스크 <select id="instance-disk"><option value="10">10 GB</option><option value="20">20 GB</option></select></label>
               </div>
+              <label class="check"><input id="instance-monitoring" type="checkbox"> <span><strong>관리형 모니터링 활성화</strong><small>guest OS에 node exporter를 설치하고, 내 VM의 CPU·메모리·디스크·네트워크 상태를 이 포털에서 확인합니다.</small></span></label>
               <button type="submit">VM 생성 요청</button>
             </form>
           </article>
@@ -88,6 +89,22 @@
               <tbody id="instance-list"><tr><td colspan="6">불러오는 중…</td></tr></tbody>
             </table>
           </div>
+        </section>
+
+        <section id="monitoring-panel" class="panel monitoring-panel" hidden>
+          <div class="section-heading">
+            <div><p class="eyebrow">MANAGED MONITORING</p><h2 id="monitoring-title">내 VM 상태</h2></div>
+            <button id="monitoring-close" class="quiet">닫기</button>
+          </div>
+          <p id="monitoring-description" class="hint">Prometheus가 수집한 가장 최근 guest OS 지표입니다.</p>
+          <div class="metric-grid monitoring-metrics">
+            <article><span>수집 상태</span><strong id="monitoring-state">–</strong></article>
+            <article><span>CPU 사용률</span><strong id="monitoring-cpu">–</strong></article>
+            <article><span>메모리 사용률</span><strong id="monitoring-memory">–</strong></article>
+            <article><span>루트 디스크 사용률</span><strong id="monitoring-disk">–</strong></article>
+            <article><span>네트워크 수신 / 송신</span><strong id="monitoring-network">–</strong></article>
+          </div>
+          <p id="monitoring-sampled-at" class="hint"></p>
         </section>
 
         <section id="admin-users" class="panel" hidden>

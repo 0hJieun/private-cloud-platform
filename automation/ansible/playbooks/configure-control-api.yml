@@ -119,6 +119,33 @@
       no_log: true
       when: not control_api_environment.stat.exists
 
+    - name: 기존 monitoring discovery token 확인
+      ansible.builtin.command:
+        argv:
+          - grep
+          - -q
+          - '^PRIVATE_CLOUD_MONITORING_DISCOVERY_TOKEN='
+          - "{{ control_api_environment_file }}"
+      register: control_api_monitoring_token_present
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: control_api_environment.stat.exists
+
+    - name: Prometheus service discovery token 생성
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - rand
+          - -hex
+          - '32'
+      register: control_api_monitoring_discovery_token
+      changed_when: true
+      no_log: true
+      when: >-
+        not control_api_environment.stat.exists or
+        control_api_monitoring_token_present.rc | default(1) != 0
+
     # hex 값만 사용하므로 DB URL 및 SQL 문자열에 안전하게 넣을 수 있다.
     - name: API 전용 database secret 파일 생성
       ansible.builtin.copy:
@@ -131,9 +158,34 @@
           PRIVATE_CLOUD_DB_PASSWORD={{ control_api_database_password.stdout }}
           PRIVATE_CLOUD_DATABASE_URL=mysql+pymysql://{{ control_api_database_user }}:{{ control_api_database_password.stdout }}@127.0.0.1:3306/{{ control_api_database_name }}?charset=utf8mb4
           PRIVATE_CLOUD_SESSION_SECRET={{ control_api_session_secret.stdout }}
+          PRIVATE_CLOUD_PROMETHEUS_URL=http://127.0.0.1:9090
+          PRIVATE_CLOUD_MONITORING_DISCOVERY_TOKEN={{ control_api_monitoring_discovery_token.stdout }}
           PRIVATE_CLOUD_WORKER_INTERVAL_SECONDS=5
       no_log: true
       when: not control_api_environment.stat.exists
+
+    - name: 기존 API 환경에 Prometheus loopback URL 추가
+      ansible.builtin.lineinfile:
+        path: "{{ control_api_environment_file }}"
+        regexp: '^PRIVATE_CLOUD_PROMETHEUS_URL='
+        line: 'PRIVATE_CLOUD_PROMETHEUS_URL=http://127.0.0.1:9090'
+        owner: root
+        group: root
+        mode: '0600'
+      when: control_api_environment.stat.exists
+
+    - name: 기존 API 환경에 monitoring discovery token 추가
+      ansible.builtin.lineinfile:
+        path: "{{ control_api_environment_file }}"
+        regexp: '^PRIVATE_CLOUD_MONITORING_DISCOVERY_TOKEN='
+        line: 'PRIVATE_CLOUD_MONITORING_DISCOVERY_TOKEN={{ control_api_monitoring_discovery_token.stdout }}'
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+      when:
+        - control_api_environment.stat.exists
+        - control_api_monitoring_token_present.rc | default(1) != 0
 
     # root은 MariaDB unix socket 인증으로만 사용한다. 앱은 아래 전용 DB 계정으로 접속한다.
     - name: API 전용 database와 최소 권한 사용자 구성

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import hmac
+import json
 from pathlib import Path
+from datetime import datetime, timezone
+from typing import Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.staticfiles import StaticFiles
@@ -32,6 +39,7 @@ from app.schemas import (
     ComputeAllocationRead,
     ImageRead,
     InstanceCreate,
+    InstanceMonitoringRead,
     InstanceRead,
     LoginRequest,
     OperationRead,
@@ -68,6 +76,7 @@ def instance_read(instance: Instance, session: Session) -> InstanceRead:
         requested_vcpus=instance.requested_vcpus,
         requested_memory_mb=instance.requested_memory_mb,
         requested_disk_gb=instance.requested_disk_gb,
+        monitoring_enabled=instance.monitoring_enabled,
         status=instance.status,
         assigned_compute=compute.name if compute else None,
         provider_ip=instance.provider_ip,
@@ -111,10 +120,131 @@ def owned_instance_or_404(instance_id: str, user: User, session: Session) -> Ins
     return instance
 
 
+def prometheus_scalar(query: str) -> tuple[Optional[float], Optional[datetime]]:
+    """Prometheus instant query 한 개를 숫자와 표본 시각으로 정규화한다.
+
+    query 문자열은 아래 API가 UUID로 조립한 고정 PromQL뿐이다. 브라우저가 임의
+    PromQL을 전달하는 proxy를 만들지 않아 다른 tenant의 지표를 조회할 수 없게 한다.
+    """
+
+    url = f"{get_settings().prometheus_url}/api/v1/query?{urlencode({'query': query})}"
+    try:
+        with urlopen(url, timeout=3) as response:  # nosec B310 - control loopback URL only
+            payload = json.load(response)
+        result = payload.get("data", {}).get("result", [])
+        if not result:
+            return None, None
+        timestamp, value = result[0]["value"]
+        return round(float(value), 2), datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
+    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        # exporter 기동 직후처럼 아직 표본이 없을 수 있다. portal 요청 전체를 500으로
+        # 만들지 않고, UI가 "수집 대기"로 표현하게 한다.
+        return None, None
+
+
+def instance_selector(instance: Instance) -> str:
+    """DB가 만든 UUID만 Prometheus label selector에 넣는 안전한 경계."""
+
+    return f'job="instance",cloud_instance_id="{instance.id}"'
+
+
+def monitoring_read(instance: Instance) -> InstanceMonitoringRead:
+    if not instance.monitoring_enabled:
+        return InstanceMonitoringRead(
+            enabled=False,
+            state="DISABLED",
+            provider_ip=instance.provider_ip,
+            sampled_at=None,
+            cpu_percent=None,
+            memory_percent=None,
+            root_disk_percent=None,
+            network_receive_bytes_per_second=None,
+            network_transmit_bytes_per_second=None,
+        )
+    if instance.status != InstanceStatus.ACTIVE or not instance.provider_ip:
+        return InstanceMonitoringRead(
+            enabled=True,
+            state="WAITING_FOR_INSTANCE",
+            provider_ip=instance.provider_ip,
+            sampled_at=None,
+            cpu_percent=None,
+            memory_percent=None,
+            root_disk_percent=None,
+            network_receive_bytes_per_second=None,
+            network_transmit_bytes_per_second=None,
+        )
+
+    selector = instance_selector(instance)
+    scrape_up, sampled_at = prometheus_scalar(f"up{{{selector}}}")
+    cpu_percent, _ = prometheus_scalar(
+        f'100 * (1 - avg(rate(node_cpu_seconds_total{{{selector},mode="idle"}}[5m])))'
+    )
+    memory_percent, _ = prometheus_scalar(
+        f'100 * (1 - node_memory_MemAvailable_bytes{{{selector}}} / node_memory_MemTotal_bytes{{{selector}}})'
+    )
+    root_disk_percent, _ = prometheus_scalar(
+        f'100 * (1 - node_filesystem_avail_bytes{{{selector},mountpoint="/",fstype!~"tmpfs|overlay|squashfs"}} '
+        f'/ node_filesystem_size_bytes{{{selector},mountpoint="/",fstype!~"tmpfs|overlay|squashfs"}})'
+    )
+    network_receive, _ = prometheus_scalar(
+        f'sum(rate(node_network_receive_bytes_total{{{selector},device!="lo"}}[5m]))'
+    )
+    network_transmit, _ = prometheus_scalar(
+        f'sum(rate(node_network_transmit_bytes_total{{{selector},device!="lo"}}[5m]))'
+    )
+    return InstanceMonitoringRead(
+        enabled=True,
+        state="UP" if scrape_up == 1 else "DOWN" if scrape_up == 0 else "WAITING_FOR_METRICS",
+        provider_ip=instance.provider_ip,
+        sampled_at=sampled_at,
+        cpu_percent=cpu_percent,
+        memory_percent=memory_percent,
+        root_disk_percent=root_disk_percent,
+        network_receive_bytes_per_second=network_receive,
+        network_transmit_bytes_per_second=network_transmit,
+    )
+
+
 @app.get("/health", response_model=HealthRead, tags=["platform"])
 def health(session: Session = Depends(get_session)) -> HealthRead:
     session.execute(text("SELECT 1"))
     return HealthRead(status="ok", environment=get_settings().environment)
+
+
+@app.get("/internal/prometheus/instance-targets", include_in_schema=False)
+def prometheus_instance_targets(request: Request, session: Session = Depends(get_session)) -> list[dict]:
+    """Prometheus HTTP service discovery 전용 endpoint.
+
+    사용자 session과 무관한 내부 endpoint이므로 Bearer token으로 보호한다. target은
+    ACTIVE이면서 모니터링을 선택한 VM만 포함하며, API가 DB 소유권과 lifecycle의
+    단일 source of truth 역할을 한다.
+    """
+
+    expected = get_settings().monitoring_discovery_token
+    provided = request.headers.get("Authorization", "")
+    if not expected or not hmac.compare_digest(provided, f"Bearer {expected}"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="monitoring discovery 인증이 필요합니다.")
+    instances = session.scalars(
+        select(Instance)
+        .where(
+            Instance.status == InstanceStatus.ACTIVE,
+            Instance.monitoring_enabled.is_(True),
+            Instance.provider_ip.is_not(None),
+            Instance.deleted_at.is_(None),
+        )
+        .order_by(Instance.name)
+    )
+    return [
+        {
+            "targets": [f"{item.provider_ip}:9100"],
+            "labels": {
+                "role": "instance",
+                "cloud_instance_id": item.id,
+                "cloud_instance_name": item.name,
+            },
+        }
+        for item in instances
+    ]
 
 
 @app.post("/v1/auth/login", response_model=UserRead, tags=["auth"])
@@ -290,6 +420,7 @@ def request_instance(
         requested_vcpus=payload.vcpus,
         requested_memory_mb=payload.memory_mb,
         requested_disk_gb=payload.disk_gb,
+        monitoring_enabled=payload.monitoring_enabled,
         status=InstanceStatus.REQUESTED,
     )
     session.add(instance)
@@ -315,6 +446,15 @@ def request_instance(
         ) from error
     session.refresh(instance)
     return instance_read(instance, session)
+
+
+@app.get("/v1/instances/{instance_id}/monitoring", response_model=InstanceMonitoringRead, tags=["monitoring"])
+def get_instance_monitoring(
+    instance_id: str, user: User = Depends(require_user), session: Session = Depends(get_session)
+) -> InstanceMonitoringRead:
+    # owned_instance_or_404가 member의 타인 VM 존재 여부를 숨긴다. admin만 전체 VM의
+    # 운영 지표를 볼 수 있고, PromQL을 브라우저에 노출하지 않는다.
+    return monitoring_read(owned_instance_or_404(instance_id, user, session))
 
 
 @app.get("/v1/instances/{instance_id}/operations", response_model=list[OperationRead], tags=["instances"])

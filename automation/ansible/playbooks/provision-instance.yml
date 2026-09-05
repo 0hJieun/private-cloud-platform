@@ -23,13 +23,18 @@
     instance_seed_directory: "{{ instance_volume_root }}/seeds/{{ instance_name }}"
     instance_disk_path: "{{ instance_directory }}/disk.qcow2"
     instance_seed_path: "{{ instance_seed_directory }}/seed.img"
-    # lookup은 managed node가 아니라 control(Ansible controller)의 공개키 파일을 읽는다.
-    instance_platform_ssh_public_key: >-
-      {{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'HOME') ~ '/.ssh/private-cloud-ansible.pub') | trim }}
     # worker는 DB에서 꺼낸 소유자 공개키를 control의 안전한 임시 파일에 쓰고 이 경로만
     # extra var로 전달한다. 공개키 문자열을 shell 인자에 직접 넣지 않기 위한 선택이다.
     instance_owner_ssh_public_key_path: ''
-    instance_owner_ssh_public_key: "{{ instance_platform_ssh_public_key }}"
+    instance_owner_ssh_public_key: ''
+    # guest agent는 테넌트가 명시적으로 선택한 경우에만 설치한다. control의 VM 생성·
+    # 삭제·DHCP 확인은 libvirt와 DHCP lease를 사용하므로 guest SSH 관리키가 필요 없다.
+    instance_monitoring_enabled: false
+    instance_monitoring_prometheus_address: 172.16.8.10
+    instance_node_exporter_version: 1.12.1
+    instance_node_exporter_archive: "node_exporter-{{ instance_node_exporter_version }}.linux-amd64.tar.gz"
+    instance_node_exporter_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ instance_node_exporter_version }}/{{ instance_node_exporter_archive }}"
+    instance_node_exporter_sha256: b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63
 
   pre_tasks:
     - name: 인스턴스 요청값 검증
@@ -41,10 +46,10 @@
           - instance_memory_mb | int >= 512
           - instance_memory_mb | int <= 2048
           - instance_disk_size_gb | int >= 10
-          - instance_platform_ssh_public_key is match('^ssh-(ed25519|rsa|ecdsa) ')
+          - instance_owner_ssh_public_key is match('^ssh-(ed25519|rsa|ecdsa) ')
         fail_msg: >-
           instance_name(소문자, 숫자, 하이픈), vCPU(1~2), 메모리(512~2048MB),
-          디스크(10GB 이상)를 확인하세요.
+          디스크(10GB 이상), 소유자 SSH 공개키를 확인하세요.
 
     - name: 소유자 SSH 공개키 파일 존재 여부 확인
       ansible.builtin.stat:
@@ -153,24 +158,75 @@
           #cloud-config
           hostname: {{ instance_name }}
           manage_etc_hosts: true
+          {% if instance_monitoring_enabled | bool %}
+          # managed monitoring VM은 공통 cloud-init package module로 Rocky/Ubuntu에
+          # 필요한 도구와 firewalld를 설치한다. exporter는 firewall rule을 만든 뒤 시작한다.
+          package_update: true
+          packages:
+            - curl
+            - tar
+            - firewalld
+          {% endif %}
           users:
             - name: {{ instance_ssh_user }}
               groups: wheel
               shell: /bin/bash
               sudo: ALL=(ALL) NOPASSWD:ALL
               ssh_authorized_keys:
-                # 첫 키: platform worker가 상태 점검·장애 대응에 쓰는 관리 키
-                - {{ instance_platform_ssh_public_key }}
-                # 둘째 키: VM을 요청한 사용자가 실제로 접속하는 개인 키
+                # VM 소유자가 등록한 공개키만 주입한다. control의 Ansible private key는
+                # infrastructure node 자동화 전용이며 tenant guest에는 넣지 않는다.
                 - {{ instance_owner_ssh_public_key }}
           ssh_pwauth: false
           disable_root: true
           runcmd:
+          {% if instance_monitoring_enabled | bool %}
+            # exporter는 control Prometheus(172.16.8.10)만 scrape할 수 있게 먼저
+            # firewall을 구성한다. public provider network 전체에 9100/tcp를 열지 않는다.
+            - systemctl enable --now firewalld
+            - firewall-cmd --permanent --add-service=ssh
+            - firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="{{ instance_monitoring_prometheus_address }}" port port="9100" protocol="tcp" accept'
+            - firewall-cmd --reload
+            - |
+              set -euo pipefail
+              useradd --system --no-create-home --shell /sbin/nologin node_exporter || true
+              archive=/var/tmp/{{ instance_node_exporter_archive }}
+              curl --fail --location --retry 3 --silent --show-error "{{ instance_node_exporter_url }}" --output "$archive"
+              echo "{{ instance_node_exporter_sha256 }}  $archive" | sha256sum --check --status
+              tar --extract --gzip --file "$archive" --directory /opt
+              install --owner=root --group=root --mode=0755 "/opt/node_exporter-{{ instance_node_exporter_version }}.linux-amd64/node_exporter" /usr/local/bin/node_exporter
+              systemctl daemon-reload
+              systemctl enable --now node_exporter
+          {% else %}
             # provider 네트워크에서도 SSH 서비스만 허용한다. 실패해도 이미지 기본 부팅을
             # 막지 않도록 firewalld가 없는 이미지에서는 그대로 넘어간다.
             - systemctl enable --now firewalld || true
             - firewall-cmd --permanent --add-service=ssh || true
             - firewall-cmd --reload || true
+          {% endif %}
+          {% if instance_monitoring_enabled | bool %}
+          write_files:
+            - path: /etc/systemd/system/node_exporter.service
+              permissions: '0644'
+              content: |
+                [Unit]
+                Description=Prometheus Node Exporter (managed instance)
+                After=network-online.target
+                Wants=network-online.target
+
+                [Service]
+                User=node_exporter
+                Group=node_exporter
+                ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
+                Restart=on-failure
+                RestartSec=3
+                NoNewPrivileges=true
+                PrivateTmp=true
+                ProtectHome=true
+                ProtectSystem=full
+
+                [Install]
+                WantedBy=multi-user.target
+          {% endif %}
 
     - name: cloud-init meta-data 작성
       ansible.builtin.copy:

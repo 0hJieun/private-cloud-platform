@@ -133,6 +133,7 @@
   vars:
     control_repository_root: /home/user1/private-cloud-platform
     control_initial_credentials_file: /home/user1/private-cloud-initial-credentials.env
+    monitoring_api_environment_file: /etc/private-cloud/api.env
     monitoring_prometheus_version: 3.14.0
     monitoring_prometheus_archive: "prometheus-{{ monitoring_prometheus_version }}.linux-amd64.tar.gz"
     monitoring_prometheus_url: "https://github.com/prometheus/prometheus/releases/download/v{{ monitoring_prometheus_version }}/{{ monitoring_prometheus_archive }}"
@@ -189,13 +190,44 @@
         - /etc/prometheus
         - /var/lib/prometheus
 
+    - name: Prometheus HTTP service discovery token 읽기
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a
+        source "{{ monitoring_api_environment_file }}"
+        set +a
+        printf '%s' "$PRIVATE_CLOUD_MONITORING_DISCOVERY_TOKEN"
+      args:
+        executable: /bin/bash
+      register: monitoring_instance_discovery_token
+      changed_when: false
+      no_log: true
+
+    - name: Prometheus HTTP service discovery token 검증
+      ansible.builtin.assert:
+        that:
+          - monitoring_instance_discovery_token.stdout | length >= 64
+        fail_msg: configure-control-api.yml을 먼저 실행해 monitoring discovery token을 생성하세요.
+      no_log: true
+
     - name: Prometheus scrape target 설정 배포
       ansible.builtin.template:
         src: "{{ control_repository_root }}/monitoring/prometheus/prometheus.yml.j2"
         dest: /etc/prometheus/prometheus.yml
         owner: prometheus
         group: prometheus
-        mode: '0644'
+        # HTTP discovery bearer token이 포함되므로 임의 local user가 읽을 수 없게 한다.
+        mode: '0640'
+      no_log: true
+
+    - name: Prometheus 설정 문법 검증
+      ansible.builtin.command:
+        argv:
+          - /opt/prometheus/promtool
+          - check
+          - config
+          - /etc/prometheus/prometheus.yml
+      changed_when: false
 
     - name: Prometheus systemd service 등록
       ansible.builtin.copy:

@@ -23,6 +23,10 @@ worker까지 같은 배포에 포함한다. `POST`는 즉시 `202 Accepted`를 �
 - `member`: 자신의 SSH key와 자신의 VM만 보는 사용자
 - `clouduser`: 생성된 guest VM 안의 고정 Linux 계정. 사용자는 이 계정에 자신이 등록한 SSH key로 접속한다.
 
+관리형 모니터링은 instance 생성 시 owner가 선택하는 옵션이다. 이 옵션은 guest node exporter 설치와
+Prometheus target 등록만 뜻하며, control의 infrastructure Ansible 키를 guest에 주입하는 권한이 아니다.
+member는 portal API가 owner 여부를 확인한 뒤 자기 VM의 지표만 조회한다.
+
 MariaDB는 다음 관계를 저장한다. 상세한 실제 컬럼·외래키·soft delete 보존 규칙은
 [Control-plane 데이터 모델](data-model.md)에 기록한다.
 

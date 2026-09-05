@@ -11,6 +11,7 @@ KVM/libvirt, Open vSwitch, DHCP, storage, Ansible, cloud-init, Prometheus를 이
 - Ansible 기반 인프라 구성 및 동적 inventory 관리
 - admin/member self-service portal과 SSH 공개키 등록
 - Prometheus/Grafana 기반 관찰 가능성
+- 선택형 managed instance monitoring과 owner-scoped portal 지표
 - GlusterFS replica 기반 이미지·볼륨 관리
 
 ## 아키텍처
@@ -47,6 +48,7 @@ docs/           # 공개 아키텍처 및 설치 문서
 - [구축 진행 현황과 다음 단계](docs/roadmap.md)
 - [Control API와 MariaDB 상태 저장소](docs/control-api.md)
 - [Control-plane 데이터 모델과 보존 정책](docs/data-model.md)
+- [관찰 가능성 설계](docs/monitoring.md)
 
 ## 현재 상태
 

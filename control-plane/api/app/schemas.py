@@ -68,6 +68,9 @@ class InstanceRead(BaseModel):
     id: str
     name: str
     owner_id: str
+    # member는 자기 인스턴스만 받으므로 자신의 사용자명만 보며, admin은 전체 VM의
+    # 소유자를 사람이 읽을 수 있는 형태로 운영 화면에 표시한다.
+    owner_username: str
     image_id: str
     requested_vcpus: int
     requested_memory_mb: int

@@ -7,115 +7,136 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <main class="shell">
+    <main class="app-frame">
       <section id="login-view" class="login-card" aria-labelledby="login-title">
+        <div class="brand-mark">PC</div>
         <p class="eyebrow">PRIVATE CLOUD CONTROL</p>
-        <h1 id="login-title">내부 클라우드 포털</h1>
-        <p>등록한 SSH 키로 VM을 요청하고, 상태와 접속 정보를 확인합니다.</p>
+        <h1 id="login-title">클라우드 자원 포털</h1>
+        <p class="lead">VM 요청, SSH 키, 상태 확인을 한 곳에서 관리합니다.</p>
         <form id="login-form" class="stack">
           <label>사용자명 <input id="login-username" autocomplete="username" required></label>
           <label>비밀번호 <input id="login-password" type="password" autocomplete="current-password" required></label>
-          <button type="submit">로그인</button>
+          <button type="submit">포털 로그인</button>
         </form>
         <p id="login-message" class="message" role="alert"></p>
       </section>
 
-      <section id="app-view" hidden>
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">PRIVATE CLOUD CONTROL</p>
-            <h1>인프라 포털</h1>
+      <section id="app-view" class="app-layout" hidden>
+        <aside class="sidebar">
+          <div class="brand-block">
+            <div class="brand-mark">PC</div>
+            <div><p class="eyebrow">PRIVATE CLOUD</p><strong>Control Center</strong></div>
           </div>
-          <div class="identity">
-            <span id="current-user"></span>
-            <button id="logout-button" class="quiet">로그아웃</button>
+          <nav id="primary-nav" class="nav-list" aria-label="주요 메뉴">
+            <button class="nav-item" data-view="overview"><span>◫</span> 개요</button>
+            <button class="nav-item" data-view="instances"><span>▣</span> 인스턴스</button>
+            <button class="nav-item" data-view="create"><span>＋</span> VM 생성</button>
+            <button class="nav-item" data-view="keys"><span>⌁</span> SSH 키</button>
+            <button class="nav-item admin-nav" data-view="operations" hidden><span>◌</span> 운영 센터</button>
+            <button class="nav-item admin-nav" data-view="users" hidden><span>♙</span> 사용자 관리</button>
+          </nav>
+          <div class="sidebar-footer">
+            <span id="sidebar-role" class="role-chip">–</span>
+            <span id="sidebar-refresh" class="muted">10초마다 갱신</span>
           </div>
-        </header>
+        </aside>
 
-        <p id="app-message" class="message" role="status"></p>
+        <section class="workspace">
+          <header class="workspace-header">
+            <div><p id="page-eyebrow" class="eyebrow">OVERVIEW</p><h1 id="page-title">개요</h1></div>
+            <div class="identity"><span id="current-user"></span><button id="logout-button" class="quiet">로그아웃</button></div>
+          </header>
+          <p id="app-message" class="message" role="status"></p>
 
-        <section id="admin-overview" class="dashboard" hidden>
-          <div class="section-heading">
-            <div><p class="eyebrow">ADMIN</p><h2>예약 자원 현황</h2></div>
-            <button class="quiet refresh-button">새로고침</button>
-          </div>
-          <div class="metric-grid">
-            <article><span>사용자</span><strong id="metric-users">–</strong></article>
-            <article><span>실행·처리 VM</span><strong id="metric-instances">–</strong></article>
-            <article><span>대기 작업</span><strong id="metric-operations">–</strong></article>
-          </div>
-          <div id="compute-cards" class="compute-grid"></div>
-          <p class="hint">여기 수치는 scheduler가 예약한 VM 자원입니다. 순간 CPU/메모리는 Prometheus 화면에서 별도로 확인합니다.</p>
-        </section>
-
-        <section class="two-column">
-          <article class="panel">
-            <div class="section-heading"><div><p class="eyebrow">ACCESS</p><h2>내 SSH 공개키</h2></div></div>
-            <p class="hint">개인키가 아닌 <code>.pub</code> 내용만 등록합니다. 생성된 VM은 <code>clouduser@VM-IP</code>로 접속합니다.</p>
-            <form id="key-form" class="stack compact">
-              <label>키 이름 <input id="key-name" placeholder="laptop-ed25519" required></label>
-              <label>공개키 <textarea id="key-value" rows="3" placeholder="ssh-ed25519 AAAA... comment" required></textarea></label>
-              <button type="submit">공개키 등록</button>
-            </form>
-            <ul id="key-list" class="key-list"></ul>
-          </article>
-
-          <article class="panel">
-            <div class="section-heading"><div><p class="eyebrow">CREATE</p><h2>새 VM 요청</h2></div></div>
-            <p class="hint">요청은 작업 큐에 저장됩니다. worker가 여유 compute를 고른 뒤 자동으로 생성합니다.</p>
-            <form id="instance-form" class="stack compact">
-              <label>VM 이름 <input id="instance-name" pattern="[a-z][a-z0-9-]{0,62}" placeholder="web01" required></label>
-              <label>이미지 <select id="instance-image" required></select></label>
-              <label>접속 공개키 <select id="instance-key" required></select></label>
-              <div class="resource-row">
-                <label>vCPU <select id="instance-vcpus"><option value="1">1</option><option value="2">2</option></select></label>
-                <label>메모리 <select id="instance-memory"><option value="1024">1024 MB</option><option value="2048">2048 MB</option></select></label>
-                <label>디스크 <select id="instance-disk"><option value="10">10 GB</option><option value="20">20 GB</option></select></label>
+          <section id="view-overview" class="view">
+            <article class="hero panel">
+              <div>
+                <p class="eyebrow">SELF-SERVICE CLOUD</p>
+                <h2 id="overview-greeting">내 자원 현황</h2>
+                <p id="overview-copy" class="lead">인스턴스 상태와 다음 작업을 빠르게 확인하세요.</p>
               </div>
-              <label class="check"><input id="instance-monitoring" type="checkbox"> <span><strong>관리형 모니터링 활성화</strong><small>guest OS에 node exporter를 설치하고, 내 VM의 CPU·메모리·디스크·네트워크 상태를 이 포털에서 확인합니다.</small></span></label>
-              <button type="submit">VM 생성 요청</button>
-            </form>
-          </article>
-        </section>
+              <button class="quiet view-switch" data-view="create">새 VM 요청</button>
+            </article>
+            <div class="summary-grid" aria-label="자원 요약">
+              <article><span id="summary-label-one">내 인스턴스</span><strong id="summary-one">–</strong><small id="summary-one-note">–</small></article>
+              <article><span id="summary-label-two">실행 중</span><strong id="summary-two">–</strong><small id="summary-two-note">–</small></article>
+              <article><span id="summary-label-three">관리형 모니터링</span><strong id="summary-three">–</strong><small id="summary-three-note">–</small></article>
+            </div>
+            <article class="panel">
+              <div class="section-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>최근 인스턴스</h2></div><button class="quiet view-switch" data-view="instances">전체 보기</button></div>
+              <div id="recent-instances" class="recent-list"></div>
+            </article>
+          </section>
 
-        <section class="panel instance-panel">
-          <div class="section-heading">
-            <div><p class="eyebrow">INSTANCES</p><h2 id="instance-heading">내 VM</h2></div>
-            <button class="quiet refresh-button">새로고침</button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>이름</th><th>상태</th><th>이미지</th><th>배치</th><th>접속</th><th>작업</th></tr></thead>
-              <tbody id="instance-list"><tr><td colspan="6">불러오는 중…</td></tr></tbody>
-            </table>
-          </div>
-        </section>
+          <section id="view-instances" class="view" hidden>
+            <div class="section-heading page-heading"><div><p class="eyebrow">INSTANCE CATALOG</p><h2 id="instance-heading">내 인스턴스</h2><p id="instance-subtitle" class="hint">생성 요청과 배치 상태를 확인합니다.</p></div><button class="quiet refresh-button">새로고침</button></div>
+            <article class="panel">
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>이름</th><th id="owner-column-heading" hidden>소유자</th><th>상태</th><th>이미지</th><th>자원</th><th>배치</th><th>접속</th><th>작업</th></tr></thead>
+                  <tbody id="instance-list"><tr><td colspan="8">불러오는 중…</td></tr></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
 
-        <section id="monitoring-panel" class="panel monitoring-panel" hidden>
-          <div class="section-heading">
-            <div><p class="eyebrow">MANAGED MONITORING</p><h2 id="monitoring-title">내 VM 상태</h2></div>
-            <button id="monitoring-close" class="quiet">닫기</button>
-          </div>
-          <p id="monitoring-description" class="hint">Prometheus가 수집한 가장 최근 guest OS 지표입니다.</p>
-          <div class="metric-grid monitoring-metrics">
-            <article><span>수집 상태</span><strong id="monitoring-state">–</strong></article>
-            <article><span>CPU 사용률</span><strong id="monitoring-cpu">–</strong></article>
-            <article><span>메모리 사용률</span><strong id="monitoring-memory">–</strong></article>
-            <article><span>루트 디스크 사용률</span><strong id="monitoring-disk">–</strong></article>
-            <article><span>네트워크 수신 / 송신</span><strong id="monitoring-network">–</strong></article>
-          </div>
-          <p id="monitoring-sampled-at" class="hint"></p>
-        </section>
+          <section id="view-instance-detail" class="view" hidden>
+            <div class="section-heading page-heading"><button id="detail-back" class="quiet">← 인스턴스 목록</button><button class="quiet refresh-button">새로고침</button></div>
+            <article class="panel detail-hero">
+              <div><p class="eyebrow">INSTANCE DETAIL</p><h2 id="detail-title">인스턴스</h2><p id="detail-subtitle" class="hint">–</p></div>
+              <div id="detail-actions" class="action-row"></div>
+            </article>
+            <section class="detail-grid">
+              <article class="panel"><p class="eyebrow">CONFIGURATION</p><div id="detail-configuration" class="definition-list"></div></article>
+              <article class="panel"><p class="eyebrow">CONNECTIVITY</p><div id="detail-connectivity" class="definition-list"></div></article>
+            </section>
+            <article id="detail-error-panel" class="panel error-panel" hidden><p class="eyebrow">LAST ERROR</p><pre id="detail-error"></pre></article>
+            <article id="detail-monitoring" class="panel monitoring-panel" hidden>
+              <div class="section-heading"><div><p class="eyebrow">MANAGED MONITORING</p><h2>Guest OS 상태</h2></div><span id="monitoring-state" class="status">–</span></div>
+              <p id="monitoring-description" class="hint">Prometheus가 수집한 가장 최근 guest OS 지표입니다.</p>
+              <div class="summary-grid monitoring-metrics">
+                <article><span>CPU 사용률</span><strong id="monitoring-cpu">–</strong></article>
+                <article><span>메모리 사용률</span><strong id="monitoring-memory">–</strong></article>
+                <article><span>루트 디스크</span><strong id="monitoring-disk">–</strong></article>
+                <article><span>네트워크 수신 / 송신</span><strong id="monitoring-network">–</strong></article>
+              </div>
+              <p id="monitoring-sampled-at" class="hint"></p>
+            </article>
+            <article class="panel"><div class="section-heading"><div><p class="eyebrow">OPERATION HISTORY</p><h2>작업 이력</h2></div></div><div id="operation-list" class="timeline"></div></article>
+          </section>
 
-        <section id="admin-users" class="panel" hidden>
-          <div class="section-heading"><div><p class="eyebrow">ADMIN</p><h2>사용자 관리</h2></div></div>
-          <form id="user-form" class="inline-form">
-            <input id="new-username" pattern="[a-z][a-z0-9-]{0,62}" placeholder="새 사용자명" required>
-            <input id="new-password" type="password" minlength="12" placeholder="초기 비밀번호 (12자 이상)" required>
-            <select id="new-role"><option value="member">member</option><option value="admin">admin</option></select>
-            <button type="submit">사용자 생성</button>
-          </form>
-          <div class="table-wrap"><table><thead><tr><th>사용자</th><th>역할</th><th>활성</th><th>생성</th></tr></thead><tbody id="user-list"></tbody></table></div>
+          <section id="view-create" class="view" hidden>
+            <div class="section-heading page-heading"><div><p class="eyebrow">CREATE INSTANCE</p><h2>새 VM 요청</h2><p class="hint">요청은 DB 작업 큐에 기록되고 scheduler가 적합한 compute에 배치합니다.</p></div></div>
+            <article class="panel form-panel">
+              <form id="instance-form" class="stack compact">
+                <label>VM 이름 <input id="instance-name" pattern="[a-z][a-z0-9-]{0,62}" placeholder="web01" required></label>
+                <div class="form-grid"><label>이미지 <select id="instance-image" required></select></label><label>접속 공개키 <select id="instance-key" required></select></label></div>
+                <div class="resource-row"><label>vCPU <select id="instance-vcpus"><option value="1">1 vCPU</option><option value="2">2 vCPU</option></select></label><label>메모리 <select id="instance-memory"><option value="1024">1 GB</option><option value="2048">2 GB</option></select></label><label>디스크 <select id="instance-disk"><option value="10">10 GB</option><option value="20">20 GB</option></select></label></div>
+                <label class="check"><input id="instance-monitoring" type="checkbox"><span><strong>관리형 모니터링 활성화</strong><small>guest OS에 exporter를 설치하고, 이 포털에서 소유자 전용 상태를 확인합니다.</small></span></label>
+                <div class="form-actions"><button type="submit">생성 요청 등록</button><span class="hint">생성 후 배치는 자동으로 결정됩니다.</span></div>
+              </form>
+            </article>
+          </section>
+
+          <section id="view-keys" class="view" hidden>
+            <div class="section-heading page-heading"><div><p class="eyebrow">ACCESS MANAGEMENT</p><h2>내 SSH 공개키</h2><p class="hint">개인키가 아닌 <code>.pub</code> 한 줄만 등록합니다.</p></div></div>
+            <section class="detail-grid">
+              <article class="panel"><form id="key-form" class="stack compact"><label>키 이름 <input id="key-name" placeholder="laptop-ed25519" required></label><label>공개키 <textarea id="key-value" rows="5" placeholder="ssh-ed25519 AAAA... comment" required></textarea></label><button type="submit">공개키 등록</button></form></article>
+              <article class="panel"><p class="eyebrow">REGISTERED KEYS</p><h2>등록된 키</h2><ul id="key-list" class="key-list"></ul></article>
+            </section>
+          </section>
+
+          <section id="view-operations" class="view admin-view" hidden>
+            <div class="section-heading page-heading"><div><p class="eyebrow">ADMIN OPERATIONS</p><h2>운영 센터</h2><p class="hint">예약 자원과 실제 VM 배치를 함께 봅니다. 순간 사용률은 Grafana에서 확인합니다.</p></div><a class="quiet external-link" href="http://172.16.2.10:3000/d/private-cloud-instances" target="_blank" rel="noopener">VM Grafana 열기 ↗</a></div>
+            <div class="summary-grid admin-summary"><article><span>사용자</span><strong id="metric-users">–</strong></article><article><span>실행·처리 VM</span><strong id="metric-instances">–</strong></article><article><span>대기 작업</span><strong id="metric-operations">–</strong></article></div>
+            <article class="panel"><div class="section-heading"><div><p class="eyebrow">COMPUTE PLACEMENT</p><h2>compute별 배치</h2></div><button class="quiet refresh-button">새로고침</button></div><div id="compute-cards" class="compute-grid"></div><p class="hint">표시 자원은 scheduler의 예약량이며, CPU 순간 사용률과는 다릅니다.</p></article>
+          </section>
+
+          <section id="view-users" class="view admin-view" hidden>
+            <div class="section-heading page-heading"><div><p class="eyebrow">ADMINISTRATION</p><h2>사용자 관리</h2></div></div>
+            <article class="panel"><form id="user-form" class="inline-form"><input id="new-username" pattern="[a-z][a-z0-9-]{0,62}" placeholder="새 사용자명" required><input id="new-password" type="password" minlength="12" placeholder="초기 비밀번호 (12자 이상)" required><select id="new-role"><option value="member">member</option><option value="admin">admin</option></select><button type="submit">사용자 생성</button></form></article>
+            <article class="panel"><div class="table-wrap"><table><thead><tr><th>사용자</th><th>역할</th><th>활성</th><th>생성 시각</th></tr></thead><tbody id="user-list"></tbody></table></div></article>
+          </section>
         </section>
       </section>
     </main>

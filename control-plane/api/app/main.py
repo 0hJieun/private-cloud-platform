@@ -65,13 +65,20 @@ app.add_middleware(
 
 
 def instance_read(instance: Instance, session: Session) -> InstanceRead:
-    """외부 API에는 compute UUID 대신 사람이 읽을 수 있는 노드 이름을 보인다."""
+    """외부 API에는 UUID 대신 운영자가 읽을 수 있는 식별자를 보인다.
+
+    일반 member는 ownership filter를 거친 자신의 instance만 조회한다. admin 화면에는
+    '어느 사용자가 어느 compute에 무엇을 배치했는지'가 필요하므로 owner username도
+    같이 반환한다. 이 값은 권한 범위를 넓히지 않는다.
+    """
 
     compute = session.get(ComputeNode, instance.assigned_compute_id) if instance.assigned_compute_id else None
+    owner = session.get(User, instance.owner_id)
     return InstanceRead(
         id=instance.id,
         name=instance.name,
         owner_id=instance.owner_id,
+        owner_username=owner.username if owner else "unknown",
         image_id=instance.image_id,
         requested_vcpus=instance.requested_vcpus,
         requested_memory_mb=instance.requested_memory_mb,

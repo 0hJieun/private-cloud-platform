@@ -49,6 +49,7 @@ docs/           # 공개 아키텍처 및 설치 문서
 - [Control API와 MariaDB 상태 저장소](docs/control-api.md)
 - [Control-plane 데이터 모델과 보존 정책](docs/data-model.md)
 - [관찰 가능성 설계](docs/monitoring.md)
+- [포털 UI와 관측 화면의 역할 분리](docs/portal-ui.md)
 
 ## 현재 상태
 

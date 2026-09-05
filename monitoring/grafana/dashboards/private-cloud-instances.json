@@ -1,0 +1,94 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(up{job=\"instance\",cloud_instance_name=~\"$instance\"})", "refId": "A" }],
+      "title": "정상 수집 VM",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 9, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [{ "expr": "100 * (1 - avg by(cloud_instance_name) (rate(node_cpu_seconds_total{job=\"instance\",cloud_instance_name=~\"$instance\",mode=\"idle\"}[$__rate_interval])))", "legendFormat": "{{cloud_instance_name}}", "refId": "A" }],
+      "title": "VM CPU 사용률",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 9, "x": 15, "y": 0 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [{ "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"instance\",cloud_instance_name=~\"$instance\"} / node_memory_MemTotal_bytes{job=\"instance\",cloud_instance_name=~\"$instance\"})", "legendFormat": "{{cloud_instance_name}}", "refId": "A" }],
+      "title": "VM 메모리 사용률",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [{ "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"instance\",cloud_instance_name=~\"$instance\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{job=\"instance\",cloud_instance_name=~\"$instance\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"})", "legendFormat": "{{cloud_instance_name}}", "refId": "A" }],
+      "title": "VM 루트 디스크 사용률",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        { "expr": "sum by(cloud_instance_name) (rate(node_network_receive_bytes_total{job=\"instance\",cloud_instance_name=~\"$instance\",device!~\"lo\"}[$__rate_interval]))", "legendFormat": "{{cloud_instance_name}} receive", "refId": "A" },
+        { "expr": "sum by(cloud_instance_name) (rate(node_network_transmit_bytes_total{job=\"instance\",cloud_instance_name=~\"$instance\",device!~\"lo\"}[$__rate_interval]))", "legendFormat": "{{cloud_instance_name}} transmit", "refId": "B" }
+      ],
+      "title": "VM 네트워크 처리량",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
+      "id": 6,
+      "options": { "footer": { "fields": "", "reducer": ["lastNotNull"], "show": false }, "showHeader": true },
+      "targets": [{ "expr": "up{job=\"instance\",cloud_instance_name=~\"$instance\"}", "format": "table", "instant": true, "refId": "A" }],
+      "title": "VM exporter 수집 상태",
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true, "job": true, "role": true }, "indexByName": {}, "renameByName": { "Value": "수집 상태 (1=정상)", "cloud_instance_name": "VM 이름", "instance": "수집 대상" } } }],
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["private-cloud", "instances", "admin"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(up{job=\"instance\"}, cloud_instance_name)",
+        "includeAll": true,
+        "label": "VM 선택",
+        "multi": true,
+        "name": "instance",
+        "options": [],
+        "query": { "query": "label_values(up{job=\"instance\"}, cloud_instance_name)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Private Cloud Instance Operations",
+  "uid": "private-cloud-instances",
+  "version": 1
+}

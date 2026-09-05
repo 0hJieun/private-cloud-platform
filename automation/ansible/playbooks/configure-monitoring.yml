@@ -407,6 +407,16 @@
         group: grafana
         mode: '0640'
 
+    # VM 지표는 Prometheus HTTP discovery가 붙인 cloud_instance_name label로 선택한다.
+    # 포털의 소유자별 현재 상태와 달리 이 dashboard는 admin 운영 분석 전용이다.
+    - name: Grafana private cloud instance dashboard 배포
+      ansible.builtin.copy:
+        src: "{{ control_repository_root }}/monitoring/grafana/dashboards/private-cloud-instances.json"
+        dest: /etc/grafana/provisioning/dashboards/private-cloud-instances.json
+        owner: root
+        group: grafana
+        mode: '0640'
+
     - name: Grafana systemd unit 다시 불러오기
       ansible.builtin.systemd:
         daemon_reload: true

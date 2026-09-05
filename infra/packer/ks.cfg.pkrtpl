@@ -25,6 +25,7 @@ NetworkManager
 openssh-server
 python3
 sudo
+chrony
 %end
 
 %post --interpreter=/bin/bash --erroronfail --log=/root/ks-post.log
@@ -69,4 +70,6 @@ PubkeyAuthentication yes
 EOF
 
 systemctl enable sshd
+# 새 템플릿도 Asia/Seoul + UTC hardware clock 정책에서 chrony로 시간을 맞춘다.
+systemctl enable chronyd
 %end

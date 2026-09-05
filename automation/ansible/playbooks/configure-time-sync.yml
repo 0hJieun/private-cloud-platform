@@ -1,0 +1,65 @@
+---
+- name: private-cloud 공통 시간대와 NTP 동기화 구성
+  hosts: monitoring_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    lab_timezone: Asia/Seoul
+
+  tasks:
+    # DB와 portal은 현재 lab의 운영 시간대로 Asia/Seoul을 표시한다. RTC는 UTC로
+    # 유지하므로 dual boot/DST 문제 없이 chrony가 system clock만 동기화한다.
+    - name: 현재 시스템 시간대 확인
+      ansible.builtin.command:
+        argv:
+          - timedatectl
+          - show
+          - --property=Timezone
+          - --value
+      register: current_timezone
+      changed_when: false
+
+    - name: 시스템 시간대를 Asia/Seoul로 설정
+      ansible.builtin.command:
+        argv:
+          - timedatectl
+          - set-timezone
+          - "{{ lab_timezone }}"
+      when: current_timezone.stdout | trim != lab_timezone
+
+    - name: chrony NTP 클라이언트 설치
+      ansible.builtin.dnf:
+        name: chrony
+        state: present
+
+    - name: chronyd 시작과 부팅 자동 시작 설정
+      ansible.builtin.service:
+        name: chronyd
+        state: started
+        enabled: true
+
+    - name: 시간대 적용 결과 확인
+      ansible.builtin.command:
+        argv:
+          - timedatectl
+          - show
+          - --property=Timezone
+          - --value
+      register: configured_timezone
+      changed_when: false
+
+    - name: 시간대가 기대값과 일치하는지 검증
+      ansible.builtin.assert:
+        that:
+          - configured_timezone.stdout | trim == lab_timezone
+        fail_msg: 시스템 시간대가 {{ lab_timezone }}로 설정되지 않았습니다.
+
+    # chronyc tracking은 동기화 상태와 선택된 upstream을 보여 주는 읽기 전용 확인이다.
+    # 첫 시작 직후에는 source 선택에 시간이 걸릴 수 있어 출력은 보존하되 실패로 보지는 않는다.
+    - name: chrony 시간 동기화 상태 확인
+      ansible.builtin.command:
+        argv:
+          - chronyc
+          - tracking
+      changed_when: false

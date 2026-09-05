@@ -20,4 +20,6 @@ scrape_configs:
         refresh_interval: 30s
         authorization:
           type: Bearer
-          credentials: '{{ monitoring_instance_discovery_token }}'
+          # Ansible register 결과 전체가 아니라 shell task가 읽은 실제 token 문자열만 쓴다.
+          # 결과 객체를 렌더하면 내부 작은따옴표 때문에 Prometheus YAML 자체가 깨진다.
+          credentials: '{{ monitoring_instance_discovery_token.stdout }}'

@@ -51,6 +51,16 @@
       "targets": [{ "expr": "sum by(node) (rate(node_network_receive_bytes_total{job=\"node\",device!~\"lo|virbr.*\"}[5m]) + rate(node_network_transmit_bytes_total{job=\"node\",device!~\"lo|virbr.*\"}[5m]))", "legendFormat": "{{node}}", "refId": "A" }],
       "title": "노드 네트워크 처리량",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 18 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [{ "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"node\",role=\"storage\",mountpoint=\"/srv/gluster/brick1\"} / node_filesystem_size_bytes{job=\"node\",role=\"storage\",mountpoint=\"/srv/gluster/brick1\"})", "legendFormat": "{{node}}", "refId": "A" }],
+      "title": "Gluster brick 사용률",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,
@@ -59,5 +69,5 @@
   "time": { "from": "now-1h", "to": "now" },
   "title": "Private Cloud Node Overview",
   "uid": "private-cloud-nodes",
-  "version": 1
+  "version": 2
 }

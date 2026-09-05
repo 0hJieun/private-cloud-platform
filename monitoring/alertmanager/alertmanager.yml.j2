@@ -20,7 +20,10 @@ receivers:
       - api_url: {{ monitoring_slack_webhook_url.stdout | trim | to_json }}
         send_resolved: true
         title: '{% raw %}{{ if eq .Status "firing" }}🚨 장애 감지{{ else }}✅ 복구 완료{{ end }}{% endraw %} · Private Cloud'
+        # 제목과 본문의 Grafana 링크는 알림 종류에 맞는 운영 화면으로 연결한다.
+        # VM 이름은 생성 시 소문자·숫자·하이픈만 허용하므로 URL query로 안전하게 사용한다.
+        title_link: '{% raw %}{{ if .CommonLabels.cloud_instance_name }}http://172.16.2.10:3000/d/private-cloud-instances?var-instance={{ .CommonLabels.cloud_instance_name }}{{ else }}http://172.16.2.10:3000/d/private-cloud-nodes{{ end }}{% endraw %}'
         # YAML double-quoted scalar의 \n escape는 Alertmanager에 실제 newline으로 전달된다.
         # Jinja block whitespace 처리에 의존하지 않아 Slack mrkdwn의 줄 구조가 유지된다.
-        text: "{% raw %}{{ range .Alerts }}{% endraw %}*알림* `{% raw %}{{ .Labels.alertname }}{% endraw %}`\n*대상* {% raw %}{{ .Labels.node }}{% endraw %}{% raw %}{{ with .Labels.cloud_instance_name }} / {{ . }}{% endraw %}{% raw %}{{ end }}{% endraw %}\n*상태* {% raw %}{{ if eq .Status \"firing\" }}발생{{ else }}복구{{ end }}{% endraw %}\n*요약* {% raw %}{{ .Annotations.summary }}{% endraw %}\n{% raw %}{{ .Annotations.description }}{% endraw %}\n---\n{% raw %}{{ end }}{% endraw %}"
+        text: "{% raw %}{{ range .Alerts }}{% endraw %}*알림* `{% raw %}{{ .Labels.alertname }}{% endraw %}`\n*대상* {% raw %}{{ .Labels.node }}{% endraw %}{% raw %}{{ with .Labels.cloud_instance_name }} / {{ . }}{% endraw %}{% raw %}{{ end }}{% endraw %}\n*상태* {% raw %}{{ if eq .Status \"firing\" }}발생{{ else }}복구{{ end }}{% endraw %}\n*요약* {% raw %}{{ .Annotations.summary }}{% endraw %}\n{% raw %}{{ .Annotations.description }}{% endraw %}\n*대시보드* {% raw %}{{ if .Labels.cloud_instance_name }}<http://172.16.2.10:3000/d/private-cloud-instances?var-instance={{ .Labels.cloud_instance_name }}|VM 대시보드 열기>{{ else }}<http://172.16.2.10:3000/d/private-cloud-nodes|노드 대시보드 열기>{{ end }}{% endraw %}\n---\n{% raw %}{{ end }}{% endraw %}"
 {% endif %}

@@ -57,6 +57,7 @@ for name in virsh("list", "--all", "--name").splitlines():
     domains.append(
         {
             "name": name,
+            "state": virsh("domstate", name).strip(),
             "memory_mb": memory_kib // 1024,
             "vcpus": vcpus,
         }
@@ -212,10 +213,10 @@ def validate_request(args: argparse.Namespace) -> None:
         raise ValueError("--disk-gb는 10 이상이어야 합니다.")
 
 
-def print_capacity(capacities: list[Capacity], selected: Capacity) -> None:
+def print_capacity(capacities: list[Capacity], selected: Capacity | None = None) -> None:
     print("[compute 자원 상태]")
     for node in capacities:
-        marker = " ← 선택" if node.name == selected.name else ""
+        marker = " ← 선택" if selected and node.name == selected.name else ""
         print(
             f"- {node.name}: domain {len(node.domains)}개, "
             f"예약 여유 {node.free_vcpus} vCPU / {node.free_memory_mb}MB, "
@@ -223,9 +224,72 @@ def print_capacity(capacities: list[Capacity], selected: Capacity) -> None:
         )
 
 
+def default_ansible_directory() -> Path:
+    """control 저장소 안의 Ansible 실행 경로를 반환한다."""
+
+    return Path(__file__).resolve().parents[2] / "automation" / "ansible"
+
+
+def query_capacities(
+    ansible_directory: Path, private_key: Path, remote_user: str
+) -> list[Capacity]:
+    """inventory의 모든 compute에 접속해 현재 scheduler 입력을 수집한다."""
+
+    hosts = load_compute_hosts(ansible_directory / "inventory" / "hosts.yml", ansible_directory)
+    return [inspect_capacity(host, private_key, remote_user) for host in hosts]
+
+
+def find_instance(capacities: list[Capacity], instance_name: str) -> Capacity | None:
+    """정의된 domain 이름으로 유일한 compute를 찾고, 없으면 None을 반환한다."""
+
+    matches = [node for node in capacities if any(domain["name"] == instance_name for domain in node.domains)]
+    if len(matches) > 1:
+        raise RuntimeError(f"{instance_name}이(가) 여러 compute에 정의되어 있어 안전하게 처리할 수 없습니다.")
+    return matches[0] if matches else None
+
+
+def locate_instance(capacities: list[Capacity], instance_name: str) -> Capacity:
+    """삭제처럼 존재가 필수인 작업에 쓸 인스턴스 위치 조회."""
+
+    match = find_instance(capacities, instance_name)
+    if not match:
+        raise RuntimeError(f"{instance_name} 인스턴스를 찾지 못했습니다.")
+    return match
+
+
+def execute_provisioner(
+    ansible_directory: Path,
+    selected: Capacity,
+    instance_name: str,
+    vcpus: int,
+    memory_mb: int,
+    disk_gb: int,
+) -> None:
+    """선택된 한 compute만 대상으로 검증된 Ansible 프로비저너를 실행한다."""
+
+    provisioner = ansible_directory / "playbooks" / "provision-instance.yml"
+    subprocess.run(
+        [
+            "ansible-playbook",
+            "--limit",
+            selected.name,
+            "-e",
+            f"instance_name={instance_name}",
+            "-e",
+            f"instance_vcpus={vcpus}",
+            "-e",
+            f"instance_memory_mb={memory_mb}",
+            "-e",
+            f"instance_disk_size_gb={disk_gb}",
+            str(provisioner),
+        ],
+        cwd=ansible_directory,
+        check=True,
+    )
+
+
 def main() -> int:
-    repository_root = Path(__file__).resolve().parents[2]
-    default_ansible_directory = repository_root / "automation" / "ansible"
+    ansible_directory = default_ansible_directory()
 
     parser = argparse.ArgumentParser(description="Ansible 프로비저너를 호출하는 최소 compute scheduler")
     parser.add_argument("--name", required=True, help="생성할 인스턴스 이름")
@@ -246,13 +310,11 @@ def main() -> int:
     if not args.private_key.is_file():
         raise FileNotFoundError(f"개인키를 찾지 못했습니다: {args.private_key}")
 
-    inventory_path = default_ansible_directory / "inventory" / "hosts.yml"
-    hosts = load_compute_hosts(inventory_path, default_ansible_directory)
-    capacities = [inspect_capacity(host, args.private_key, args.remote_user) for host in hosts]
+    capacities = query_capacities(ansible_directory, args.private_key, args.remote_user)
 
-    existing = [node.name for node in capacities if any(domain["name"] == args.name for domain in node.domains)]
+    existing = find_instance(capacities, args.name)
     if existing:
-        raise RuntimeError(f"{args.name}은(는) 이미 {', '.join(existing)}에 정의되어 있습니다.")
+        raise RuntimeError(f"{args.name}은(는) 이미 {existing.name}에 정의되어 있습니다.")
 
     selected = select_node(capacities, args.vcpus, args.memory_mb)
     print_capacity(capacities, selected)
@@ -262,24 +324,13 @@ def main() -> int:
         return 0
 
     print(f"\n{args.name} 생성 요청을 {selected.name}에 전달합니다.")
-    provisioner = default_ansible_directory / "playbooks" / "provision-instance.yml"
-    subprocess.run(
-        [
-            "ansible-playbook",
-            "--limit",
-            selected.name,
-            "-e",
-            f"instance_name={args.name}",
-            "-e",
-            f"instance_vcpus={args.vcpus}",
-            "-e",
-            f"instance_memory_mb={args.memory_mb}",
-            "-e",
-            f"instance_disk_size_gb={args.disk_gb}",
-            str(provisioner),
-        ],
-        cwd=default_ansible_directory,
-        check=True,
+    execute_provisioner(
+        ansible_directory,
+        selected,
+        args.name,
+        args.vcpus,
+        args.memory_mb,
+        args.disk_gb,
     )
     return 0
 

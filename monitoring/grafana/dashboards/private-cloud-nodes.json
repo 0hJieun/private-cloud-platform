@@ -33,7 +33,7 @@
               { "id": "mappings", "value": [{ "options": { "0": { "color": "red", "index": 0, "text": "DOWN" }, "1": { "color": "green", "index": 1, "text": "UP" } }, "type": "value" }] },
               { "id": "color", "value": { "mode": "thresholds" } },
               { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } },
-              { "id": "custom.cellOptions", "value": { "type": "color-background" } }
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
             ]
           }
         ]

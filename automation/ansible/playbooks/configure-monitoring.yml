@@ -1,0 +1,394 @@
+---
+- name: 모든 infrastructure 노드에 Prometheus node exporter 배포
+  hosts: monitoring_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    node_exporter_version: 1.12.1
+    node_exporter_archive: "node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    node_exporter_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/{{ node_exporter_archive }}"
+    node_exporter_sha256: b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63
+    node_exporter_release_directory: "/opt/node_exporter-{{ node_exporter_version }}.linux-amd64"
+    node_exporter_service_name: node_exporter
+
+  tasks:
+    - name: firewalld 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: node exporter system user 생성
+      ansible.builtin.user:
+        name: node_exporter
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+
+    - name: node exporter release archive 다운로드와 checksum 검증
+      ansible.builtin.get_url:
+        url: "{{ node_exporter_url }}"
+        dest: "/var/tmp/{{ node_exporter_archive }}"
+        checksum: "sha256:{{ node_exporter_sha256 }}"
+        owner: root
+        group: root
+        mode: '0644'
+        timeout: 60
+
+    - name: node exporter release 압축 해제
+      ansible.builtin.unarchive:
+        src: "/var/tmp/{{ node_exporter_archive }}"
+        dest: /opt
+        remote_src: true
+        creates: "{{ node_exporter_release_directory }}/node_exporter"
+
+    - name: node exporter 실행 경로 고정
+      ansible.builtin.file:
+        src: "{{ node_exporter_release_directory }}/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        state: link
+        force: true
+
+    - name: node exporter systemd service 등록
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ node_exporter_service_name }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          ExecStart=/usr/local/bin/node_exporter --web.listen-address={{ monitoring_bind_address }}:9100
+          Restart=on-failure
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: node exporter systemd unit 다시 불러오기
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: node exporter 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: "{{ node_exporter_service_name }}"
+        state: restarted
+        enabled: true
+
+    - name: firewalld에서 node exporter port 영구 허용 여부 확인
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --query-port=9100/tcp
+      register: node_exporter_firewall_port
+      changed_when: false
+      failed_when: false
+
+    - name: firewalld에서 node exporter management port 허용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --add-port=9100/tcp
+      when: node_exporter_firewall_port.rc != 0
+
+    - name: node exporter port runtime 적용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --add-port=9100/tcp
+      when: node_exporter_firewall_port.rc != 0
+
+    - name: node exporter metrics endpoint 확인
+      ansible.builtin.uri:
+        url: "http://{{ monitoring_bind_address }}:9100/metrics"
+        status_code: 200
+        return_content: true
+      register: node_exporter_health
+      changed_when: false
+      retries: 5
+      delay: 2
+      until: "'node_exporter_build_info' in node_exporter_health.content"
+
+- name: control에 Prometheus와 Grafana dashboard 배포
+  hosts: control_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    control_repository_root: /home/user1/private-cloud-platform
+    control_initial_credentials_file: /home/user1/private-cloud-initial-credentials.env
+    monitoring_prometheus_version: 3.14.0
+    monitoring_prometheus_archive: "prometheus-{{ monitoring_prometheus_version }}.linux-amd64.tar.gz"
+    monitoring_prometheus_url: "https://github.com/prometheus/prometheus/releases/download/v{{ monitoring_prometheus_version }}/{{ monitoring_prometheus_archive }}"
+    monitoring_prometheus_sha256: f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d
+    monitoring_prometheus_release_directory: "/opt/prometheus-{{ monitoring_prometheus_version }}.linux-amd64"
+    monitoring_grafana_environment_file: /etc/private-cloud/grafana.env
+
+  tasks:
+    - name: Prometheus system group 생성
+      ansible.builtin.group:
+        name: prometheus
+        system: true
+
+    - name: Prometheus system user 생성
+      ansible.builtin.user:
+        name: prometheus
+        group: prometheus
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+
+    - name: Prometheus release archive 다운로드와 checksum 검증
+      ansible.builtin.get_url:
+        url: "{{ monitoring_prometheus_url }}"
+        dest: "/var/tmp/{{ monitoring_prometheus_archive }}"
+        checksum: "sha256:{{ monitoring_prometheus_sha256 }}"
+        owner: root
+        group: root
+        mode: '0644'
+        timeout: 180
+
+    - name: Prometheus release 압축 해제
+      ansible.builtin.unarchive:
+        src: "/var/tmp/{{ monitoring_prometheus_archive }}"
+        dest: /opt
+        remote_src: true
+        creates: "{{ monitoring_prometheus_release_directory }}/prometheus"
+
+    - name: Prometheus 현재 release symlink 설정
+      ansible.builtin.file:
+        src: "{{ monitoring_prometheus_release_directory }}"
+        dest: /opt/prometheus
+        state: link
+        force: true
+
+    - name: Prometheus 설정과 TSDB 경로 생성
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+      loop:
+        - /etc/prometheus
+        - /var/lib/prometheus
+
+    - name: Prometheus scrape target 설정 배포
+      ansible.builtin.template:
+        src: "{{ control_repository_root }}/monitoring/prometheus/prometheus.yml.j2"
+        dest: /etc/prometheus/prometheus.yml
+        owner: prometheus
+        group: prometheus
+        mode: '0644'
+
+    - name: Prometheus systemd service 등록
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/prometheus.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Prometheus Monitoring Server
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          User=prometheus
+          Group=prometheus
+          ExecStart=/opt/prometheus/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/var/lib/prometheus --storage.tsdb.retention.time=7d --web.listen-address=127.0.0.1:9090
+          Restart=on-failure
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Prometheus systemd unit 다시 불러오기
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Prometheus 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: prometheus
+        state: restarted
+        enabled: true
+
+    - name: Prometheus health endpoint 확인
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9090/-/healthy
+        status_code: 200
+      register: prometheus_health
+      changed_when: false
+      retries: 10
+      delay: 2
+      until: prometheus_health.status == 200
+
+    - name: Grafana 설치
+      ansible.builtin.dnf:
+        name: grafana
+        state: present
+
+    - name: Grafana 초기 secret 존재 여부 확인
+      ansible.builtin.stat:
+        path: "{{ monitoring_grafana_environment_file }}"
+      register: grafana_environment
+
+    - name: Grafana admin 초기 password 생성
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - rand
+          - -hex
+          - '16'
+      register: grafana_admin_password
+      changed_when: true
+      no_log: true
+      when: not grafana_environment.stat.exists
+
+    - name: Grafana admin secret 파일 생성
+      ansible.builtin.copy:
+        dest: "{{ monitoring_grafana_environment_file }}"
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          GF_SECURITY_ADMIN_USER=admin
+          GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password.stdout }}
+      no_log: true
+      when: not grafana_environment.stat.exists
+
+    - name: API 초기 credential 파일 존재 여부 확인
+      ansible.builtin.stat:
+        path: "{{ control_initial_credentials_file }}"
+      register: control_initial_credentials
+
+    - name: API 초기 credential 파일 검증
+      ansible.builtin.assert:
+        that:
+          - control_initial_credentials.stat.exists
+        fail_msg: configure-control-api.yml을 먼저 실행해 초기 credential 파일을 생성하세요.
+
+    - name: user1이 읽을 초기 Grafana credential 추가
+      ansible.builtin.blockinfile:
+        path: "{{ control_initial_credentials_file }}"
+        owner: user1
+        group: user1
+        mode: '0600'
+        marker: "# {mark} PRIVATE CLOUD GRAFANA"
+        block: |
+          GRAFANA_ADMIN_PASSWORD={{ grafana_admin_password.stdout }}
+      no_log: true
+      when: not grafana_environment.stat.exists
+
+    - name: Grafana service environment drop-in 생성
+      ansible.builtin.file:
+        path: /etc/systemd/system/grafana-server.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Grafana service environment drop-in 파일 생성
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/grafana-server.service.d/private-cloud.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Service]
+          EnvironmentFile={{ monitoring_grafana_environment_file }}
+
+    - name: Grafana가 management IP에서만 listen하도록 설정
+      ansible.builtin.lineinfile:
+        path: /etc/grafana/grafana.ini
+        regexp: "^;?{{ item.key }} ="
+        line: "{{ item.key }} = {{ item.value }}"
+        insertafter: '^\[server\]$'
+      loop:
+        - { key: 'http_addr', value: '172.16.2.10' }
+        - { key: 'http_port', value: '3000' }
+
+    - name: Grafana public sign up 비활성화
+      ansible.builtin.lineinfile:
+        path: /etc/grafana/grafana.ini
+        regexp: '^;?allow_sign_up ='
+        line: 'allow_sign_up = false'
+        insertafter: '^\[users\]$'
+
+    - name: Grafana Prometheus datasource provisioning 배포
+      ansible.builtin.copy:
+        src: "{{ control_repository_root }}/monitoring/grafana/datasources/prometheus.yml"
+        dest: /etc/grafana/provisioning/datasources/private-cloud-prometheus.yml
+        owner: root
+        group: grafana
+        mode: '0640'
+
+    - name: Grafana dashboard provider 설정 배포
+      ansible.builtin.copy:
+        src: "{{ control_repository_root }}/monitoring/grafana/dashboards/dashboards.yml"
+        dest: /etc/grafana/provisioning/dashboards/private-cloud.yml
+        owner: root
+        group: grafana
+        mode: '0640'
+
+    - name: Grafana private cloud node dashboard 배포
+      ansible.builtin.copy:
+        src: "{{ control_repository_root }}/monitoring/grafana/dashboards/private-cloud-nodes.json"
+        dest: /etc/grafana/provisioning/dashboards/private-cloud-nodes.json
+        owner: root
+        group: grafana
+        mode: '0640'
+
+    - name: Grafana systemd unit 다시 불러오기
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Grafana 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: grafana-server
+        state: restarted
+        enabled: true
+
+    - name: firewalld에서 Grafana port 영구 허용 여부 확인
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --query-port=3000/tcp
+      register: grafana_firewall_port
+      changed_when: false
+      failed_when: false
+
+    - name: firewalld에서 Grafana management port 허용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --add-port=3000/tcp
+      when: grafana_firewall_port.rc != 0
+
+    - name: Grafana port runtime 적용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --add-port=3000/tcp
+      when: grafana_firewall_port.rc != 0
+
+    - name: Grafana health endpoint 확인
+      ansible.builtin.uri:
+        url: http://172.16.2.10:3000/api/health
+        status_code: 200
+      register: grafana_health
+      changed_when: false
+      retries: 20
+      delay: 3
+      until: grafana_health.status == 200

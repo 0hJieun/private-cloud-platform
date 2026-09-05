@@ -17,6 +17,8 @@
     control_api_database_user: privatecloud
     control_api_service_name: private-cloud-api
     control_worker_service_name: private-cloud-worker
+    control_portal_listen_address: 172.16.2.10
+    control_portal_port: 8080
 
   tasks:
     - name: API 소스 코드 존재 여부 확인
@@ -31,16 +33,23 @@
           - control_api_source.stat.isreg
         fail_msg: control 저장소를 최신 main 브랜치로 동기화한 뒤 실행하세요.
 
-    - name: MariaDB와 Python 패키지 도구 설치
+    - name: MariaDB Python과 portal proxy 패키지 설치
       ansible.builtin.dnf:
         name:
           - mariadb-server
           - python3-pip
+          - nginx
         state: present
 
     - name: MariaDB 시작과 자동 시작 설정
       ansible.builtin.service:
         name: mariadb
+        state: started
+        enabled: true
+
+    - name: firewalld 시작 상태 확인
+      ansible.builtin.service:
+        name: firewalld
         state: started
         enabled: true
 
@@ -296,6 +305,67 @@
         state: restarted
         enabled: true
 
+    # Portal은 API와 같은 origin으로 reverse proxy한다. 지금은 내부 lab HTTP만 쓰고,
+    # 외부 공개 단계에서 TLS termination과 https_only cookie를 별도 적용한다.
+    - name: private-cloud portal Nginx reverse proxy 설정
+      ansible.builtin.copy:
+        dest: /etc/nginx/conf.d/private-cloud.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          server {
+              listen {{ control_portal_listen_address }}:{{ control_portal_port }};
+              server_name _;
+
+              location / {
+                  proxy_pass http://127.0.0.1:8000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+
+    - name: Nginx 설정 검증
+      ansible.builtin.command:
+        argv:
+          - nginx
+          - -t
+      changed_when: false
+
+    - name: Nginx 시작과 portal 설정 반영
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+        enabled: true
+
+    - name: firewalld에서 portal port 영구 허용 여부 확인
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --query-port={{ control_portal_port }}/tcp
+      register: control_portal_firewall_port
+      changed_when: false
+      failed_when: false
+
+    - name: firewalld에서 portal management port 허용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --add-port={{ control_portal_port }}/tcp
+      when: control_portal_firewall_port.rc != 0
+
+    - name: portal port runtime 적용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --add-port={{ control_portal_port }}/tcp
+      when: control_portal_firewall_port.rc != 0
+
     - name: API health endpoint 확인
       ansible.builtin.uri:
         url: http://127.0.0.1:8000/health
@@ -306,3 +376,14 @@
       retries: 10
       delay: 2
       until: control_api_health.status == 200
+
+    - name: Nginx를 경유한 portal 확인
+      ansible.builtin.uri:
+        url: "http://{{ control_portal_listen_address }}:{{ control_portal_port }}/"
+        status_code: 200
+        return_content: true
+      register: control_portal_health
+      changed_when: false
+      retries: 10
+      delay: 2
+      until: "'PRIVATE CLOUD CONTROL' in control_portal_health.content"

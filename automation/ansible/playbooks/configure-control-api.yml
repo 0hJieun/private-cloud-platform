@@ -214,7 +214,8 @@
       args:
         chdir: "{{ control_api_directory }}"
         executable: /bin/bash
-      no_log: true
+      # password는 root/user1 전용 파일을 source할 뿐 명령 인자·stdout으로 출력하지
+      # 않는다. 이 task의 traceback은 남겨야 bootstrap 실패 원인을 진단할 수 있다.
       when: not control_api_bootstrap_marker.stat.exists
 
     - name: 초기 catalog bootstrap 완료 marker 생성

@@ -74,22 +74,42 @@ function imageLabel(instance) {
 function resourceLabel(instance) { return `${instance.requested_vcpus} vCPU · ${formatGbFromMb(instance.requested_memory_mb)} · ${instance.requested_disk_gb} GB`; }
 function statusLabel(status) {
   return ({
-    REQUESTED: "요청됨", SCHEDULING: "배치 중", PROVISIONING: "생성 중", WAITING_FOR_IP: "IP 대기",
-    ACTIVE: "생성 완료", ERROR: "오류", DELETE_REQUESTED: "삭제 요청", DELETING: "삭제 중", DELETED: "삭제됨",
+    REQUESTED: "생성 중", SCHEDULING: "생성 중", PROVISIONING: "생성 중", WAITING_FOR_IP: "생성 중",
+    ACTIVE: "생성 완료", ERROR: "생성 실패", DELETE_REQUESTED: "삭제 중", DELETING: "삭제 중", DELETED: "삭제됨",
     PENDING: "대기", RUNNING: "실행 중", SUCCEEDED: "완료", FAILED: "실패",
-    UP: "정상 수집", DOWN: "수집 실패", RUNTIME_UP: "실행 관측 정상", HOST_DOWN: "호스트 장애",
-    GUEST_UNREACHABLE: "Guest 관측 실패", UNMONITORED: "미관측", UNKNOWN: "상태 미확인", NOT_READY: "생성 대기",
-    WAITING_FOR_METRICS: "수집 대기", WAITING_FOR_INSTANCE: "VM 기동 대기", DISABLED: "비활성",
+    UP: "정상", DOWN: "응답 없음", RUNTIME_UP: "사용 가능", HOST_DOWN: "호스트 연결 끊김",
+    GUEST_UNREACHABLE: "VM 응답 없음", UNMONITORED: "생성 완료", UNKNOWN: "상태 확인 중", NOT_READY: "생성 중",
+    WAITING_FOR_METRICS: "상태 확인 중", WAITING_FOR_INSTANCE: "생성 중", DISABLED: "상태 점검 안 함",
   })[status] || status;
 }
-function statusBadge(status) {
+function statusBadge(status, description = statusLabel(status)) {
   const badge = make("span", { className: `status status-${status}`, text: statusLabel(status) });
-  badge.title = status;
+  badge.title = description;
   return badge;
 }
 function monitoringStateLabel(value) { return statusLabel(value); }
 function computeObservationLabel(value) {
-  return ({ UP: "관측 UP", DOWN: "관측 DOWN", UNKNOWN: "관측 확인 중" })[value] || `관측 ${value}`;
+  return ({ UP: "정상", DOWN: "응답 없음", UNKNOWN: "상태 확인 중" })[value] || value;
+}
+function instanceDisplayStatus(instance) {
+  if (["ERROR", "DELETE_REQUESTED", "DELETING"].includes(instance.status)) return instance.status;
+  if (instance.status !== "ACTIVE") return "NOT_READY";
+  return instance.runtime_state;
+}
+function instanceStatusDescription(instance) {
+  const display = instanceDisplayStatus(instance);
+  if (display === "HOST_DOWN") return `${instance.assigned_compute || "배치 노드"}와의 연결이 끊겼습니다.`;
+  if (display === "GUEST_UNREACHABLE") return "배치 노드는 정상이나 VM 상태 점검 응답이 없습니다.";
+  if (display === "UNMONITORED") return "VM 생성은 완료됐지만 상태 점검을 설정하지 않았습니다.";
+  if (display === "RUNTIME_UP") return "VM 상태 점검이 정상입니다.";
+  if (display === "ERROR") return instance.error_message || "VM 생성 작업이 실패했습니다.";
+  return statusLabel(display);
+}
+function instanceHealthLabel(instance) {
+  if (instance.status === "ERROR") return "생성 실패";
+  if (instance.status !== "ACTIVE") return "준비 중";
+  if (!instance.monitoring_enabled) return "설정 안 함";
+  return statusLabel(instance.runtime_state);
 }
 
 function setText(selector, value) { $(selector).textContent = value; }
@@ -181,12 +201,13 @@ function applyRoleVisibility() {
   const admin = isAdmin();
   document.querySelectorAll(".admin-nav").forEach((item) => { item.hidden = !admin; });
   $("#owner-column-heading").hidden = !admin;
+  $("#compute-column-heading").hidden = !admin;
   $("#sidebar-role").textContent = admin ? "ADMIN" : "MEMBER";
   $("#current-user").textContent = `${state.user.username} · ${admin ? "관리자" : "사용자"}`;
   $("#instance-heading").textContent = admin ? "전체 인스턴스" : "내 인스턴스";
   $("#instance-subtitle").textContent = admin
-    ? "소유자, 배치 compute, 예약 자원을 기준으로 전체 워크로드를 관리합니다."
-    : "내가 요청한 VM의 배치, 접속 정보, 작업 이력을 확인합니다.";
+    ? "소유자, 배치 노드, 예약 자원을 기준으로 전체 워크로드를 관리합니다."
+    : "내 VM의 상태와 접속 정보를 확인합니다.";
 }
 
 function showView(view) {
@@ -228,17 +249,17 @@ function renderOverview() {
   const admin = isAdmin();
   setText("#overview-greeting", admin ? "플랫폼 운영 현황" : `${state.user.username}님의 자원 현황`);
   setText("#overview-copy", admin
-    ? "워크로드의 소유자와 compute 배치를 확인하고, 상세 관측은 Grafana에서 이어서 분석합니다."
-    : "내 VM의 생성 상태, 접속 정보, 관리형 모니터링 상태를 확인하세요.");
+    ? "워크로드 상태와 배치 노드를 확인하고, 자세한 운영 지표는 Grafana에서 분석합니다."
+    : "내 VM의 현재 상태와 접속 정보를 확인하세요.");
   setText("#summary-label-one", admin ? "전체 인스턴스" : "내 인스턴스");
   setText("#summary-one", String(visible.length));
   setText("#summary-one-note", processing.length ? `처리 중 ${processing.length}개` : "처리 대기 없음");
-  setText("#summary-label-two", "실행 관측 정상");
+  setText("#summary-label-two", "사용 가능");
   setText("#summary-two", String(running.length));
-  setText("#summary-two-note", "관리형 모니터링 exporter 기준");
-  setText("#summary-label-three", "관리형 모니터링");
+  setText("#summary-two-note", "상태 점검이 정상인 VM");
+  setText("#summary-label-three", "상태 점검 설정됨");
   setText("#summary-three", String(monitored.length));
-  setText("#summary-three-note", monitored.length ? "guest OS exporter 선택됨" : "선택된 VM 없음");
+  setText("#summary-three-note", monitored.length ? "선택한 VM에만 적용" : "설정된 VM 없음");
 
   const target = $("#recent-instances");
   target.replaceChildren();
@@ -248,7 +269,8 @@ function renderOverview() {
     const info = document.createElement("div");
     const title = make("strong", { text: instance.name });
     const meta = make("div", { className: "recent-meta" });
-    meta.append(statusBadge(instance.status), statusBadge(instance.runtime_state), make("span", { text: imageLabel(instance) }), make("span", { text: instance.assigned_compute || "배치 대기" }));
+    meta.append(statusBadge(instanceDisplayStatus(instance), instanceStatusDescription(instance)), make("span", { text: imageLabel(instance) }));
+    if (admin) meta.append(make("span", { text: instance.assigned_compute || "배치 대기" }));
     if (admin) meta.append(make("span", { text: `소유자 ${instance.owner_username}` }));
     info.append(title, meta);
     const detail = make("button", { className: "quiet mini-action", text: "상세" });
@@ -265,7 +287,7 @@ function renderInstances() {
   if (!state.instances.length) {
     const row = document.createElement("tr");
     const cell = make("td", { text: "표시할 인스턴스가 없습니다." });
-    cell.colSpan = admin ? 9 : 8;
+    cell.colSpan = admin ? 8 : 6;
     row.append(cell);
     body.append(row);
     return;
@@ -274,11 +296,12 @@ function renderInstances() {
     const row = document.createElement("tr");
     row.append(make("td", { text: instance.name }));
     if (admin) row.append(make("td", { text: instance.owner_username }));
-    const statusCell = document.createElement("td"); statusCell.append(statusBadge(instance.status)); row.append(statusCell);
-    const runtimeCell = document.createElement("td"); runtimeCell.append(statusBadge(instance.runtime_state)); row.append(runtimeCell);
+    const statusCell = document.createElement("td");
+    statusCell.append(statusBadge(instanceDisplayStatus(instance), instanceStatusDescription(instance)));
+    row.append(statusCell);
     row.append(make("td", { text: imageLabel(instance) }));
     row.append(make("td", { className: "resource-text", text: resourceLabel(instance) }));
-    row.append(make("td", { text: instance.assigned_compute || "scheduler 대기" }));
+    if (admin) row.append(make("td", { text: instance.assigned_compute || "배치 대기" }));
     row.append(make("td", { text: instance.provider_ip ? `${instance.guest_username}@${instance.provider_ip}` : "IP 대기" }));
     const actions = make("td", { className: "table-actions" });
     const detail = make("button", { className: "quiet mini-action", text: "상세" });
@@ -324,8 +347,7 @@ function renderAdminOperations() {
   cards.replaceChildren();
   for (const node of state.overview.compute_nodes) {
     const card = make("article", { className: "compute-card" });
-    const placementState = node.state === "READY" ? "배치 등록" : node.state;
-    card.append(make("h3", { text: node.name }), make("p", { text: `${placementState} · ${computeObservationLabel(node.observed_state)} · 배치 VM ${node.active_instances}개` }));
+    card.append(make("h3", { text: node.name }), make("p", { text: `${computeObservationLabel(node.observed_state)} · 배치 VM ${node.active_instances}개` }));
     card.append(capacityBar("예약 vCPU", node.allocated_vcpus, node.allocatable_vcpus, "vCPU"));
     card.append(capacityBar("예약 메모리", node.allocated_memory_mb, node.allocatable_memory_mb, "MB"));
     const list = make("div", { className: "placement-list" });
@@ -334,7 +356,7 @@ function renderAdminOperations() {
     for (const instance of assigned) {
       const item = make("div", { className: "placement-item" });
       const info = document.createElement("div");
-      info.append(make("p", { text: instance.name }), make("small", { text: `${instance.owner_username} · ${resourceLabel(instance)} · ${statusLabel(instance.status)} · ${statusLabel(instance.runtime_state)}` }));
+      info.append(make("p", { text: instance.name }), make("small", { text: `${instance.owner_username} · ${resourceLabel(instance)} · ${statusLabel(instanceDisplayStatus(instance))}` }));
       const detail = make("button", { className: "quiet mini-action", text: "상세" });
       detail.onclick = () => openInstanceDetail(instance);
       item.append(info, detail); list.append(item);
@@ -361,16 +383,23 @@ function renderDetail(instance) {
   state.selectedInstance = instance;
   setText("#detail-title", instance.name);
   setText("#detail-subtitle", `${instance.owner_username} · ${formatDate(instance.created_at)} 생성`);
-  setDefinitionList("#detail-configuration", [
-    ["소유자", instance.owner_username], ["이미지", imageLabel(instance)], ["요청 자원", resourceLabel(instance)],
-    ["모니터링", instance.monitoring_enabled ? "관리형 모니터링 활성화" : "비활성"],
-    ["Ansible 관리", instance.automation_enrolled ? "control runtime inventory에 등록" : "자동화 키 주입 전 생성된 VM"],
-    ["생성 상태", statusLabel(instance.status)], ["실행 관측", statusLabel(instance.runtime_state)],
-  ]);
-  setDefinitionList("#detail-connectivity", [
-    ["배치 compute", instance.assigned_compute || "scheduler 배치 대기"], ["Provider IP", instance.provider_ip || "DHCP IP 대기"],
-    ["SSH 계정", instance.guest_username], ["접속 형식", instance.provider_ip ? `ssh -i <private-key> ${instance.guest_username}@${instance.provider_ip}` : "IP가 할당되면 표시됩니다."],
-  ]);
+  const configuration = [
+    ["이미지", imageLabel(instance)], ["요청 자원", resourceLabel(instance)],
+    ["현재 상태", statusLabel(instanceDisplayStatus(instance))],
+    ["상태 점검", instanceHealthLabel(instance)],
+    ["생성 기록", statusLabel(instance.status)],
+  ];
+  if (isAdmin()) {
+    configuration.unshift(["소유자", instance.owner_username]);
+    configuration.push(["자동화 관리", instance.automation_enrolled ? "등록됨" : "등록되지 않음"]);
+  }
+  setDefinitionList("#detail-configuration", configuration);
+  const connectivity = [
+    ["Provider IP", instance.provider_ip || "IP 준비 중"], ["SSH 계정", instance.guest_username],
+    ["접속 형식", instance.provider_ip ? `ssh -i <private-key> ${instance.guest_username}@${instance.provider_ip}` : "IP가 할당되면 표시됩니다."],
+  ];
+  if (isAdmin()) connectivity.unshift(["배치 노드", instance.assigned_compute || "배치 대기"]);
+  setDefinitionList("#detail-connectivity", connectivity);
   const errorPanel = $("#detail-error-panel");
   errorPanel.hidden = !instance.error_message;
   setText("#detail-error", instance.error_message || "");

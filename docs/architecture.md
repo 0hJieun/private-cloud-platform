@@ -13,6 +13,8 @@
 
 control node가 관리하는 네트워크에서는 VMware DHCP 서비스를 비활성화합니다.
 
+control의 `dhcpd`는 provider NIC(`ens192`)에서만 동작하며 `172.16.8.151–172.16.8.239`를 instance DHCP 풀로 사용한다. control·compute·storage의 고정 provider 주소는 이 범위 밖에 두고, instance 기본 게이트웨이는 VMware NAT 게이트웨이 `172.16.8.2`로 설정한다.
+
 ## 구성 요소
 
 - `control`: API, scheduler, MariaDB, DHCP, Ansible, Prometheus, Grafana, 관리자 웹 애플리케이션

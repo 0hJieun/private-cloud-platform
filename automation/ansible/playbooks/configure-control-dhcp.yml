@@ -1,0 +1,154 @@
+---
+- name: control 노드의 provider DHCP 서버 구성
+  hosts: control_nodes
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: ISC DHCP 서버 설치
+      ansible.builtin.dnf:
+        name: dhcp-server
+        state: present
+
+    - name: provider NIC의 NetworkManager 연결 프로필 확인
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - --get-values
+          - GENERAL.CONNECTION
+          - device
+          - show
+          - "{{ dhcp_interface }}"
+      register: dhcp_provider_connection
+      changed_when: false
+      check_mode: false
+
+    - name: provider NIC 연결 프로필 검증
+      ansible.builtin.assert:
+        that:
+          - dhcp_provider_connection.stdout | trim | length > 0
+          - dhcp_provider_connection.stdout | trim != '--'
+        fail_msg: "{{ dhcp_interface }}에서 NetworkManager 연결 프로필을 찾지 못했습니다."
+
+    # DHCP는 provider NIC에서만 수신한다. VMnet2 관리망에는 DHCP 응답을 보내지 않는다.
+    - name: DHCP 데몬의 provider NIC 전용 바인딩 설정
+      ansible.builtin.lineinfile:
+        path: /etc/sysconfig/dhcpd
+        regexp: '^DHCPDARGS='
+        line: "DHCPDARGS={{ dhcp_interface }}"
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+      notify: DHCP 서비스 다시 시작
+
+    - name: private-cloud provider 방화벽 zone 존재 여부 확인
+      ansible.builtin.command: firewall-cmd --permanent --get-zones
+      register: firewall_zones
+      changed_when: false
+
+    - name: private-cloud provider 방화벽 zone 생성
+      ansible.builtin.command: "firewall-cmd --permanent --new-zone={{ dhcp_provider_zone }}"
+      when: dhcp_provider_zone not in firewall_zones.stdout.split()
+      changed_when: true
+      notify: 방화벽 정책 다시 불러오기
+
+    - name: provider NIC 연결에 전용 방화벽 zone 지정
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ dhcp_provider_connection.stdout | trim }}"
+          - connection.zone
+          - "{{ dhcp_provider_zone }}"
+      changed_when: true
+      notify: provider NIC 연결 다시 적용
+
+    - name: provider 방화벽 zone의 DHCP 서비스 허용 상태 확인
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --zone={{ dhcp_provider_zone }}
+          - --query-service=dhcp
+      register: dhcp_firewall_service
+      changed_when: false
+      failed_when: dhcp_firewall_service.rc not in [0, 1]
+
+    - name: provider 방화벽 zone에서 DHCP 서비스 허용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --permanent
+          - --zone={{ dhcp_provider_zone }}
+          - --add-service=dhcp
+      when: dhcp_firewall_service.rc == 1
+      changed_when: true
+      notify: 방화벽 정책 다시 불러오기
+
+    - name: DHCP 주소 풀 설정 배포
+      ansible.builtin.copy:
+        dest: /etc/dhcp/dhcpd.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Ansible로 관리하는 private-cloud provider DHCP 설정
+          authoritative;
+          default-lease-time 600;
+          max-lease-time 3600;
+
+          option domain-name "privatecloud.local";
+          option domain-name-servers {{ dhcp_dns_servers }};
+
+          subnet {{ dhcp_subnet }} netmask {{ dhcp_netmask }} {
+            range {{ dhcp_pool_start }} {{ dhcp_pool_end }};
+            option routers {{ dhcp_gateway }};
+            option subnet-mask {{ dhcp_netmask }};
+            option broadcast-address 172.16.8.255;
+          }
+      notify: DHCP 서비스 다시 시작
+
+    - name: DHCP 설정 문법 검증
+      ansible.builtin.command:
+        argv:
+          - dhcpd
+          - -t
+          - -cf
+          - /etc/dhcp/dhcpd.conf
+      changed_when: false
+
+    - name: DHCP 서비스 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: dhcpd
+        state: started
+        enabled: true
+
+    - name: DHCP UDP 67 포트 수신 확인
+      ansible.builtin.command: ss -lunp
+      register: dhcp_listening_ports
+      changed_when: false
+      failed_when: "':67' not in dhcp_listening_ports.stdout"
+
+  handlers:
+    - name: 방화벽 정책 다시 불러오기
+      ansible.builtin.command: firewall-cmd --reload
+      changed_when: false
+      listen: 방화벽 정책 다시 불러오기
+
+    - name: provider NIC 연결 다시 적용
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - connection
+          - up
+          - "{{ dhcp_provider_connection.stdout | trim }}"
+      changed_when: false
+      listen: provider NIC 연결 다시 적용
+
+    - name: DHCP 서비스 다시 시작
+      ansible.builtin.service:
+        name: dhcpd
+        state: restarted
+      listen: DHCP 서비스 다시 시작

@@ -72,7 +72,10 @@ def claim_next_operation() -> Optional[str]:
             select(Operation)
             .where(Operation.status == OperationStatus.PENDING)
             .order_by(Operation.created_at)
-            .with_for_update(skip_locked=True)
+            # 이 랩은 worker service를 한 개만 실행한다. MariaDB 10.5는
+            # SKIP LOCKED를 지원하지 않으므로, 이식성 있는 일반 행 잠금만 사용한다.
+            # worker를 수평 확장할 때는 DB 버전에 맞는 queue/lock 전략을 별도 설계한다.
+            .with_for_update()
         )
         if not operation:
             return None

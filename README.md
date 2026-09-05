@@ -43,6 +43,8 @@ docs/           # 공개 아키텍처 및 설치 문서
 - [첫 KVM 인스턴스 프로비저닝](docs/instance-provisioning.md)
 - [최소 인스턴스 scheduler](docs/scheduling.md)
 - [`cloudctl` 운영 CLI](docs/cloudctl.md)
+- [구축 진행 현황과 다음 단계](docs/roadmap.md)
+- [Control API와 MariaDB 상태 저장소](docs/control-api.md)
 
 ## 현재 상태
 

@@ -1,0 +1,171 @@
+---
+- name: control 노드의 MariaDB와 private-cloud API 준비
+  hosts: control_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    control_repository_root: /home/user1/private-cloud-platform
+    control_api_directory: "{{ control_repository_root }}/control-plane/api"
+    control_api_venv: "{{ control_api_directory }}/.venv"
+    control_api_environment_directory: /etc/private-cloud
+    control_api_environment_file: "{{ control_api_environment_directory }}/api.env"
+    control_api_database_name: private_cloud
+    control_api_database_user: privatecloud
+    control_api_service_name: private-cloud-api
+
+  tasks:
+    - name: API 소스 코드 존재 여부 확인
+      ansible.builtin.stat:
+        path: "{{ control_api_directory }}/app/main.py"
+      register: control_api_source
+
+    - name: API 소스 코드 검증
+      ansible.builtin.assert:
+        that:
+          - control_api_source.stat.exists
+          - control_api_source.stat.isreg
+        fail_msg: control 저장소를 최신 main 브랜치로 동기화한 뒤 실행하세요.
+
+    - name: MariaDB와 Python 패키지 도구 설치
+      ansible.builtin.dnf:
+        name:
+          - mariadb-server
+          - python3-pip
+        state: present
+
+    - name: MariaDB 시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: mariadb
+        state: started
+        enabled: true
+
+    - name: API 환경 변수 디렉터리 생성
+      ansible.builtin.file:
+        path: "{{ control_api_environment_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: 기존 API database secret 확인
+      ansible.builtin.stat:
+        path: "{{ control_api_environment_file }}"
+      register: control_api_environment
+
+    - name: MariaDB application password 생성
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - rand
+          - -hex
+          - '24'
+      register: control_api_database_password
+      changed_when: true
+      no_log: true
+      when: not control_api_environment.stat.exists
+
+    # hex 값만 사용하므로 DB URL 및 SQL 문자열에 안전하게 넣을 수 있다.
+    - name: API 전용 database secret 파일 생성
+      ansible.builtin.copy:
+        dest: "{{ control_api_environment_file }}"
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          PRIVATE_CLOUD_ENVIRONMENT=lab
+          PRIVATE_CLOUD_DB_PASSWORD={{ control_api_database_password.stdout }}
+          PRIVATE_CLOUD_DATABASE_URL=mysql+pymysql://{{ control_api_database_user }}:{{ control_api_database_password.stdout }}@127.0.0.1:3306/{{ control_api_database_name }}?charset=utf8mb4
+      no_log: true
+      when: not control_api_environment.stat.exists
+
+    # root은 MariaDB unix socket 인증으로만 사용한다. 앱은 아래 전용 DB 계정으로 접속한다.
+    - name: API 전용 database와 최소 권한 사용자 구성
+      ansible.builtin.shell: |
+        set -euo pipefail
+        source "{{ control_api_environment_file }}"
+        mariadb --protocol=socket --user=root <<SQL
+        CREATE DATABASE IF NOT EXISTS {{ control_api_database_name }} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        CREATE USER IF NOT EXISTS '{{ control_api_database_user }}'@'127.0.0.1' IDENTIFIED BY '${PRIVATE_CLOUD_DB_PASSWORD}';
+        ALTER USER '{{ control_api_database_user }}'@'127.0.0.1' IDENTIFIED BY '${PRIVATE_CLOUD_DB_PASSWORD}';
+        GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP ON {{ control_api_database_name }}.* TO '{{ control_api_database_user }}'@'127.0.0.1';
+        FLUSH PRIVILEGES;
+        SQL
+      args:
+        executable: /bin/bash
+      no_log: true
+
+    - name: API Python virtual environment 생성
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -m
+          - venv
+          - "{{ control_api_venv }}"
+        creates: "{{ control_api_venv }}/bin/python"
+      become_user: user1
+
+    - name: API Python 의존성 설치
+      ansible.builtin.pip:
+        requirements: "{{ control_api_directory }}/requirements.txt"
+        executable: "{{ control_api_venv }}/bin/pip"
+      become_user: user1
+      notify: private-cloud API 다시 시작
+
+    - name: private-cloud API systemd 서비스 등록
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ control_api_service_name }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Private Cloud Control API
+          After=network-online.target mariadb.service
+          Wants=network-online.target
+          Requires=mariadb.service
+
+          [Service]
+          Type=simple
+          User=user1
+          Group=user1
+          WorkingDirectory={{ control_api_directory }}
+          EnvironmentFile={{ control_api_environment_file }}
+          ExecStart={{ control_api_venv }}/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+          Restart=on-failure
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - systemd 다시 불러오기
+        - private-cloud API 다시 시작
+
+    # 저장소에서 새 API 코드를 pull한 뒤 실행하는 deploy playbook이므로 매번 재시작한다.
+    # 그래야 Python source 변경도 새 systemd process에 반영된다.
+    - name: private-cloud API 재시작과 자동 시작 설정
+      ansible.builtin.service:
+        name: "{{ control_api_service_name }}"
+        state: restarted
+        enabled: true
+
+    - name: API health endpoint 확인
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8000/health
+        return_content: true
+        status_code: 200
+      register: control_api_health
+      changed_when: false
+      retries: 10
+      delay: 2
+      until: control_api_health.status == 200
+
+  handlers:
+    - name: systemd 다시 불러오기
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: private-cloud API 다시 시작
+      ansible.builtin.service:
+        name: "{{ control_api_service_name }}"
+        state: restarted

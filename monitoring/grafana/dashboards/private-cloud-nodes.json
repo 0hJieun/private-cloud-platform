@@ -24,7 +24,7 @@
       "gridPos": { "h": 7, "w": 4, "x": 4, "y": 0 },
       "id": 7,
       "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(up{job=\"node\"} == 0)", "refId": "A" }],
+      "targets": [{ "expr": "count(up{job=\"node\"} == 0)", "refId": "A" }],
       "title": "장애 노드 수",
       "type": "stat"
     },
@@ -42,10 +42,10 @@
       },
       "gridPos": { "h": 7, "w": 16, "x": 8, "y": 0 },
       "id": 8,
-      "options": { "cellHeight": "sm", "showHeader": true },
-      "targets": [{ "expr": "up{job=\"node\"}", "format": "table", "instant": true, "refId": "A" }],
-      "title": "노드 수집 상태 — DOWN은 장애 감지 대상",
-      "type": "table"
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true }, "textMode": "value_and_name" },
+      "targets": [{ "expr": "up{job=\"node\"}", "instant": true, "legendFormat": "{{node}} · {{role}}", "refId": "A" }],
+      "title": "노드 수집 상태 — UP/DOWN",
+      "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -104,5 +104,5 @@
   "time": { "from": "now-1h", "to": "now" },
   "title": "Private Cloud Node Overview",
   "uid": "private-cloud-nodes",
-  "version": 3
+  "version": 4
 }

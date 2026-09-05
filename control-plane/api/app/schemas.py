@@ -90,6 +90,24 @@ class OperationRead(BaseModel):
     completed_at: datetime | None
 
 
+class ComputeAllocationRead(BaseModel):
+    name: str
+    state: str
+    allocatable_vcpus: int
+    allocatable_memory_mb: int
+    allocated_vcpus: int
+    allocated_memory_mb: int
+    active_instances: int
+    last_seen_at: datetime | None
+
+
+class AdminOverviewRead(BaseModel):
+    users: int
+    active_instances: int
+    queued_operations: int
+    compute_nodes: list[ComputeAllocationRead]
+
+
 class HealthRead(BaseModel):
     status: str
     environment: str

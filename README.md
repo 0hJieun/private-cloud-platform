@@ -9,6 +9,7 @@ KVM/libvirt, Open vSwitch, DHCP, storage, Ansible, cloud-init, Prometheus를 이
 - Open vSwitch provider network와 DHCP 구성
 - cloud-init 기반 초기화와 SSH public key 주입
 - Ansible 기반 인프라 구성 및 동적 inventory 관리
+- admin/member self-service portal과 SSH 공개키 등록
 - Prometheus/Grafana 기반 관찰 가능성
 - GlusterFS replica 기반 이미지·볼륨 관리
 
@@ -22,7 +23,7 @@ control ── API / scheduler / MariaDB / DHCP / monitoring
    └── storage2 ── GlusterFS replica data
 ```
 
-관리자 페이지는 control 내부의 Nginx, WAS, MariaDB로 구성합니다.
+현재 portal은 control의 FastAPI process와 MariaDB로 구성하며, 외부 공개 전에는 Nginx·HTTPS를 추가합니다.
 
 ## 저장소 구조
 

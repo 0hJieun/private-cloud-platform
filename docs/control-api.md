@@ -79,4 +79,4 @@ systemctl --no-pager --full status private-cloud-api private-cloud-worker
 curl http://127.0.0.1:8000/docs
 ```
 
-`/docs`에서 먼저 `/v1/auth/login`을 호출하면 session cookie가 생기고, 이후 key·image·instance endpoint를 시험할 수 있다. 다음 웹 UI 단계에서는 이 API를 직접 호출하는 화면을 제공한다.
+`/docs`에서 먼저 `/v1/auth/login`을 호출하면 session cookie가 생기고, 이후 key·image·instance endpoint를 시험할 수 있다. `/`는 같은 API를 사용하는 self-service portal이다. admin은 전체 VM·사용자·compute 예약량을 보고, member는 자신의 키·VM만 본다.

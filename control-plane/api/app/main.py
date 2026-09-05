@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +28,8 @@ from app.models import (
 )
 from app.schemas import (
     HealthRead,
+    AdminOverviewRead,
+    ComputeAllocationRead,
     ImageRead,
     InstanceCreate,
     InstanceRead,
@@ -207,6 +210,47 @@ def list_images(_: User = Depends(require_user), session: Session = Depends(get_
     ]
 
 
+@app.get("/v1/admin/overview", response_model=AdminOverviewRead, tags=["admin"])
+def admin_overview(_: User = Depends(require_admin), session: Session = Depends(get_session)) -> AdminOverviewRead:
+    """DB의 예약 자원을 합산한 admin dashboard용 요약.
+
+    Prometheus가 제공할 순간 CPU·메모리와 달리, 이 값은 scheduler가 이미 배치한
+    VM의 '예약량'이다. 두 종류를 혼동하지 않도록 UI에서 allocation이라고 표시한다.
+    """
+
+    active_statuses = {
+        InstanceStatus.SCHEDULING,
+        InstanceStatus.PROVISIONING,
+        InstanceStatus.WAITING_FOR_IP,
+        InstanceStatus.ACTIVE,
+        InstanceStatus.DELETE_REQUESTED,
+        InstanceStatus.DELETING,
+    }
+    instances = list(session.scalars(select(Instance).where(Instance.deleted_at.is_(None))))
+    compute_nodes = list(session.scalars(select(ComputeNode).order_by(ComputeNode.name)))
+    allocations: list[ComputeAllocationRead] = []
+    for node in compute_nodes:
+        assigned = [item for item in instances if item.assigned_compute_id == node.id and item.status in active_statuses]
+        allocations.append(
+            ComputeAllocationRead(
+                name=node.name,
+                state=node.state,
+                allocatable_vcpus=node.allocatable_vcpus,
+                allocatable_memory_mb=node.allocatable_memory_mb,
+                allocated_vcpus=sum(item.requested_vcpus for item in assigned),
+                allocated_memory_mb=sum(item.requested_memory_mb for item in assigned),
+                active_instances=len(assigned),
+                last_seen_at=node.last_seen_at,
+            )
+        )
+    return AdminOverviewRead(
+        users=len(list(session.scalars(select(User.id)))),
+        active_instances=sum(1 for item in instances if item.status in active_statuses),
+        queued_operations=len(list(session.scalars(select(Operation.id).where(Operation.status == OperationStatus.PENDING)))),
+        compute_nodes=allocations,
+    )
+
+
 @app.get("/v1/instances", response_model=list[InstanceRead], tags=["instances"])
 def list_instances(user: User = Depends(require_user), session: Session = Depends(get_session)) -> list[InstanceRead]:
     statement = select(Instance).where(Instance.deleted_at.is_(None)).order_by(Instance.created_at.desc())
@@ -330,3 +374,9 @@ def request_delete_instance(
         started_at=operation.started_at,
         completed_at=operation.completed_at,
     )
+
+
+# UI는 별도 Node build 없이 FastAPI process에서 제공한다. mount는 API route 선언 뒤에
+# 두므로 /v1/*와 /docs는 먼저 FastAPI router가 처리한다.
+STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
+app.mount("/", StaticFiles(directory=STATIC_DIRECTORY, html=True), name="web")

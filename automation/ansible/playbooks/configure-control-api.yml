@@ -110,7 +110,6 @@
         requirements: "{{ control_api_directory }}/requirements.txt"
         executable: "{{ control_api_venv }}/bin/pip"
       become_user: user1
-      notify: private-cloud API 다시 시작
 
     - name: private-cloud API systemd 서비스 등록
       ansible.builtin.copy:
@@ -137,9 +136,11 @@
 
           [Install]
           WantedBy=multi-user.target
-      notify:
-        - systemd 다시 불러오기
-        - private-cloud API 다시 시작
+
+    # 새 unit 파일을 처음 등록한 경우에도 아래 service task가 이름을 인식하도록 즉시 반영한다.
+    - name: 새 systemd unit 다시 불러오기
+      ansible.builtin.systemd:
+        daemon_reload: true
 
     # 저장소에서 새 API 코드를 pull한 뒤 실행하는 deploy playbook이므로 매번 재시작한다.
     # 그래야 Python source 변경도 새 systemd process에 반영된다.
@@ -159,13 +160,3 @@
       retries: 10
       delay: 2
       until: control_api_health.status == 200
-
-  handlers:
-    - name: systemd 다시 불러오기
-      ansible.builtin.systemd:
-        daemon_reload: true
-
-    - name: private-cloud API 다시 시작
-      ansible.builtin.service:
-        name: "{{ control_api_service_name }}"
-        state: restarted

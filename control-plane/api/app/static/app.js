@@ -15,6 +15,7 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const ACTIVE_STATUSES = new Set(["SCHEDULING", "PROVISIONING", "WAITING_FOR_IP", "ACTIVE", "DELETE_REQUESTED", "DELETING"]);
+const ISSUE_STATUSES = new Set(["ERROR", "HOST_DOWN", "GUEST_UNREACHABLE"]);
 const PAGE_META = {
   overview: ["OVERVIEW", "개요"],
   instances: ["INSTANCE CATALOG", "인스턴스"],
@@ -105,13 +106,6 @@ function instanceStatusDescription(instance) {
   if (display === "ERROR") return instance.error_message || "VM 생성 작업이 실패했습니다.";
   return statusLabel(display);
 }
-function instanceHealthLabel(instance) {
-  if (instance.status === "ERROR") return "생성 실패";
-  if (instance.status !== "ACTIVE") return "준비 중";
-  if (!instance.monitoring_enabled) return "설정 안 함";
-  return statusLabel(instance.runtime_state);
-}
-
 function setText(selector, value) { $(selector).textContent = value; }
 function fillSelect(select, values, valueKey, label) {
   const selectedValue = select.value;
@@ -245,7 +239,7 @@ function renderOverview() {
   const visible = state.instances;
   const running = visible.filter((item) => item.runtime_state === "RUNTIME_UP");
   const processing = visible.filter((item) => ACTIVE_STATUSES.has(item.status) && item.status !== "ACTIVE");
-  const monitored = visible.filter((item) => item.monitoring_enabled);
+  const issues = visible.filter((item) => ISSUE_STATUSES.has(instanceDisplayStatus(item)));
   const admin = isAdmin();
   setText("#overview-greeting", admin ? "플랫폼 운영 현황" : `${state.user.username}님의 자원 현황`);
   setText("#overview-copy", admin
@@ -253,18 +247,23 @@ function renderOverview() {
     : "내 VM의 현재 상태와 접속 정보를 확인하세요.");
   setText("#summary-label-one", admin ? "전체 인스턴스" : "내 인스턴스");
   setText("#summary-one", String(visible.length));
-  setText("#summary-one-note", processing.length ? `처리 중 ${processing.length}개` : "처리 대기 없음");
+  setText("#summary-one-note", processing.length ? `생성·삭제 중 ${processing.length}개` : "처리 대기 없음");
   setText("#summary-label-two", "사용 가능");
   setText("#summary-two", String(running.length));
   setText("#summary-two-note", "상태 점검이 정상인 VM");
-  setText("#summary-label-three", "상태 점검 설정됨");
-  setText("#summary-three", String(monitored.length));
-  setText("#summary-three-note", monitored.length ? "선택한 VM에만 적용" : "설정된 VM 없음");
+  setText("#summary-label-three", "문제 있는 VM");
+  setText("#summary-three", String(issues.length));
+  setText("#summary-three-note", issues.length ? "최근 목록에서 먼저 표시" : "현재 문제 없음");
 
   const target = $("#recent-instances");
   target.replaceChildren();
   if (!visible.length) addEmptyState(target, "아직 인스턴스가 없습니다. ‘새 VM 요청’에서 첫 워크로드를 생성하세요.");
-  for (const instance of visible.slice(0, 4)) {
+  const recent = [...visible].sort((left, right) => {
+    const leftIssue = ISSUE_STATUSES.has(instanceDisplayStatus(left));
+    const rightIssue = ISSUE_STATUSES.has(instanceDisplayStatus(right));
+    return Number(rightIssue) - Number(leftIssue);
+  });
+  for (const instance of recent.slice(0, 4)) {
     const row = make("div", { className: "recent-item" });
     const info = document.createElement("div");
     const title = make("strong", { text: instance.name });
@@ -348,8 +347,8 @@ function renderAdminOperations() {
   for (const node of state.overview.compute_nodes) {
     const card = make("article", { className: "compute-card" });
     card.append(make("h3", { text: node.name }), make("p", { text: `${computeObservationLabel(node.observed_state)} · 배치 VM ${node.active_instances}개` }));
-    card.append(capacityBar("예약 vCPU", node.allocated_vcpus, node.allocatable_vcpus, "vCPU"));
-    card.append(capacityBar("예약 메모리", node.allocated_memory_mb, node.allocatable_memory_mb, "MB"));
+    card.append(capacityBar("VM 배정 vCPU", node.allocated_vcpus, node.allocatable_vcpus, "vCPU"));
+    card.append(capacityBar("VM 배정 메모리", node.allocated_memory_mb, node.allocatable_memory_mb, "MB"));
     const list = make("div", { className: "placement-list" });
     const assigned = state.instances.filter((item) => item.assigned_compute === node.name && ACTIVE_STATUSES.has(item.status));
     if (!assigned.length) addEmptyState(list, "현재 배치된 실행·처리 VM이 없습니다.");
@@ -386,11 +385,12 @@ function renderDetail(instance) {
   const configuration = [
     ["이미지", imageLabel(instance)], ["요청 자원", resourceLabel(instance)],
     ["현재 상태", statusLabel(instanceDisplayStatus(instance))],
-    ["상태 점검", instanceHealthLabel(instance)],
-    ["생성 기록", statusLabel(instance.status)],
   ];
   if (isAdmin()) {
     configuration.unshift(["소유자", instance.owner_username]);
+    if (statusLabel(instanceDisplayStatus(instance)) !== statusLabel(instance.status)) {
+      configuration.push(["생성 기록", statusLabel(instance.status)]);
+    }
     configuration.push(["자동화 관리", instance.automation_enrolled ? "등록됨" : "등록되지 않음"]);
   }
   setDefinitionList("#detail-configuration", configuration);

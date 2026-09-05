@@ -69,7 +69,7 @@
           </section>
 
           <section id="view-instances" class="view" hidden>
-            <div class="section-heading page-heading"><div><p class="eyebrow">INSTANCE CATALOG</p><div class="heading-title-row"><h2 id="instance-heading">내 인스턴스</h2><details class="status-help"><summary aria-label="VM 상태 안내" title="VM 상태 안내">i</summary><div class="status-help-popover" role="note"><strong>VM 상태 안내</strong><p><b>사용 가능</b> — VM 상태 점검이 정상입니다.</p><p><b>생성 중</b> — VM과 네트워크를 준비하고 있습니다.</p><p><b>호스트 연결 끊김</b> / <b>VM 응답 없음</b> — 표시된 원인에 맞춰 점검이 필요합니다.</p><p><b>생성 완료</b> — VM은 만들어졌고 상태 점검은 설정하지 않았습니다.</p></div></details></div><p id="instance-subtitle" class="hint">생성 요청과 접속 정보를 확인합니다.</p></div><button class="quiet refresh-button">새로고침</button></div>
+            <div class="section-heading page-heading"><div><p class="eyebrow">INSTANCE CATALOG</p><div class="heading-title-row"><h2 id="instance-heading">내 인스턴스</h2><details class="status-help"><summary aria-label="VM 상태 안내" title="VM 상태 안내">i</summary><div class="status-help-popover" role="note"><strong>VM 상태 안내</strong><p><b>사용 가능</b> — VM 상태 점검이 정상입니다.</p><p><b>생성 중</b> — VM과 네트워크를 준비하고 있습니다.</p><p><b>호스트 연결 끊김</b> / <b>VM 응답 없음</b> — 표시된 원인에 맞춰 점검이 필요합니다.</p><p><b>생성 완료</b> — VM은 만들어졌고 상태 점검은 설정하지 않았습니다.</p><p><b>생성 실패</b> — 상세 화면의 오류 내용을 확인하세요.</p></div></details></div><p id="instance-subtitle" class="hint">생성 요청과 접속 정보를 확인합니다.</p></div><button class="quiet refresh-button">새로고침</button></div>
             <article class="panel">
               <div class="table-wrap">
                 <table>
@@ -131,9 +131,9 @@
           </section>
 
           <section id="view-operations" class="view admin-view" hidden>
-            <div class="section-heading page-heading"><div><p class="eyebrow">ADMIN OPERATIONS</p><h2>운영 센터</h2><p class="hint">예약 자원과 실제 VM 배치를 함께 봅니다. 순간 사용률은 Grafana에서 확인합니다.</p></div><a class="quiet external-link" href="http://172.16.2.10:3000/d/private-cloud-instances" target="_blank" rel="noopener">VM Grafana 열기 ↗</a></div>
+            <div class="section-heading page-heading"><div><p class="eyebrow">ADMIN OPERATIONS</p><h2>운영 센터</h2><p class="hint">VM 배정 한도와 현재 배치 현황을 봅니다. 순간 사용률은 Grafana에서 확인합니다.</p></div><a class="quiet external-link" href="http://172.16.2.10:3000/d/private-cloud-instances" target="_blank" rel="noopener">VM Grafana 열기 ↗</a></div>
             <div class="summary-grid admin-summary"><article><span>사용자</span><strong id="metric-users">–</strong></article><article><span>실행·처리 VM</span><strong id="metric-instances">–</strong></article><article><span>대기 작업</span><strong id="metric-operations">–</strong></article></div>
-            <article class="panel"><div class="section-heading"><div><p class="eyebrow">COMPUTE PLACEMENT</p><h2>compute별 배치</h2></div><button class="quiet refresh-button">새로고침</button></div><div id="compute-cards" class="compute-grid"></div><p class="hint">표시 자원은 scheduler의 예약량이며, CPU 순간 사용률과는 다릅니다.</p></article>
+            <article class="panel"><div class="section-heading"><div><p class="eyebrow">COMPUTE PLACEMENT</p><h2>compute별 배치</h2></div><button class="quiet refresh-button">새로고침</button></div><div id="compute-cards" class="compute-grid"></div><p class="hint">각 compute VM은 3 vCPU · 6 GB로 구성했습니다. host OS와 libvirt를 위해 1 vCPU · 2 GB를 남겨, 새 VM은 노드당 최대 2 vCPU · 4 GB까지만 안전하게 배정합니다.</p></article>
           </section>
 
           <section id="view-users" class="view admin-view" hidden>

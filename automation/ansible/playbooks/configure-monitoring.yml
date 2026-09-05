@@ -147,6 +147,15 @@
     monitoring_alertmanager_release_directory: "/opt/alertmanager-{{ monitoring_alertmanager_version }}.linux-amd64"
     monitoring_alertmanager_secret_file: /etc/private-cloud/alertmanager.env
 
+  handlers:
+    # dashboard JSON만 수정할 때 Prometheus/Alertmanager까지 다시 시작하지 않는다.
+    - name: Grafana dashboard provisioning 다시 불러오기
+      ansible.builtin.service:
+        name: grafana-server
+        state: restarted
+      tags:
+        - grafana_dashboards
+
   tasks:
     - name: Prometheus system group 생성
       ansible.builtin.group:
@@ -598,6 +607,9 @@
         owner: root
         group: grafana
         mode: '0640'
+      notify: Grafana dashboard provisioning 다시 불러오기
+      tags:
+        - grafana_dashboards
 
     - name: Grafana private cloud node dashboard 배포
       ansible.builtin.copy:
@@ -606,6 +618,9 @@
         owner: root
         group: grafana
         mode: '0640'
+      notify: Grafana dashboard provisioning 다시 불러오기
+      tags:
+        - grafana_dashboards
 
     # VM 지표는 Prometheus HTTP discovery가 붙인 cloud_instance_name label로 선택한다.
     # 포털의 소유자별 현재 상태와 달리 이 dashboard는 admin 운영 분석 전용이다.
@@ -616,6 +631,9 @@
         owner: root
         group: grafana
         mode: '0640'
+      notify: Grafana dashboard provisioning 다시 불러오기
+      tags:
+        - grafana_dashboards
 
     - name: Grafana systemd unit 다시 불러오기
       ansible.builtin.systemd:

@@ -388,7 +388,7 @@ def admin_overview(_: User = Depends(require_admin), session: Session = Depends(
         )
     return AdminOverviewRead(
         users=len(list(session.scalars(select(User.id)))),
-        active_instances=sum(1 for item in instances if item.status in active_statuses),
+        active_instances=sum(1 for item in instances if item.status in ALLOCATION_STATUSES),
         queued_operations=len(list(session.scalars(select(Operation.id).where(Operation.status == OperationStatus.PENDING)))),
         compute_nodes=allocations,
     )

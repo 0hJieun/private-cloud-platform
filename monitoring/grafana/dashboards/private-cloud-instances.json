@@ -75,14 +75,15 @@
         "allValue": ".*",
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(up{job=\"instance\"}, cloud_instance_name)",
+        "definition": "query_result(up{job=\"instance\"})",
         "includeAll": true,
         "label": "VM 선택",
         "multi": true,
         "name": "instance",
         "options": [],
-        "query": { "query": "label_values(up{job=\"instance\"}, cloud_instance_name)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "query": { "query": "query_result(up{job=\"instance\"})", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
         "refresh": 1,
+        "regex": "/cloud_instance_name=\"([^\"]+)\"/",
         "type": "query"
       }
     ]
@@ -90,5 +91,5 @@
   "time": { "from": "now-6h", "to": "now" },
   "title": "Private Cloud Instance Operations",
   "uid": "private-cloud-instances",
-  "version": 1
+  "version": 2
 }

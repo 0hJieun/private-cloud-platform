@@ -7,6 +7,7 @@ DB 모델 자체를 외부에 그대로 노출하지 않는다. 이 파일이 AP
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -71,10 +72,10 @@ class InstanceRead(BaseModel):
     requested_memory_mb: int
     requested_disk_gb: int
     status: str
-    assigned_compute: str | None
-    provider_ip: str | None
+    assigned_compute: Optional[str]
+    provider_ip: Optional[str]
     guest_username: str
-    error_message: str | None
+    error_message: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -84,10 +85,10 @@ class OperationRead(BaseModel):
     operation_type: str
     status: str
     attempts: int
-    error_message: str | None
+    error_message: Optional[str]
     created_at: datetime
-    started_at: datetime | None
-    completed_at: datetime | None
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
 
 
 class ComputeAllocationRead(BaseModel):
@@ -98,7 +99,7 @@ class ComputeAllocationRead(BaseModel):
     allocated_vcpus: int
     allocated_memory_mb: int
     active_instances: int
-    last_seen_at: datetime | None
+    last_seen_at: Optional[datetime]
 
 
 class AdminOverviewRead(BaseModel):

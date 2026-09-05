@@ -17,7 +17,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 INSTANCE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
@@ -104,7 +104,7 @@ class Capacity:
         return self.allocatable_memory_mb - self.allocated_memory_mb
 
 
-def run(command: list[str], *, cwd: Path | None = None, input_text: str | None = None) -> str:
+def run(command: list[str], *, cwd: Optional[Path] = None, input_text: Optional[str] = None) -> str:
     """실패하면 원래 stderr를 보여 주고 즉시 중단하는 subprocess 래퍼."""
 
     result = subprocess.run(
@@ -213,7 +213,7 @@ def validate_request(args: argparse.Namespace) -> None:
         raise ValueError("--disk-gb는 10 이상이어야 합니다.")
 
 
-def print_capacity(capacities: list[Capacity], selected: Capacity | None = None) -> None:
+def print_capacity(capacities: list[Capacity], selected: Optional[Capacity] = None) -> None:
     print("[compute 자원 상태]")
     for node in capacities:
         marker = " ← 선택" if selected and node.name == selected.name else ""
@@ -239,7 +239,7 @@ def query_capacities(
     return [inspect_capacity(host, private_key, remote_user) for host in hosts]
 
 
-def find_instance(capacities: list[Capacity], instance_name: str) -> Capacity | None:
+def find_instance(capacities: list[Capacity], instance_name: str) -> Optional[Capacity]:
     """정의된 domain 이름으로 유일한 compute를 찾고, 없으면 None을 반환한다."""
 
     matches = [node for node in capacities if any(domain["name"] == instance_name for domain in node.domains)]

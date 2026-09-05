@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -91,7 +92,7 @@ class ComputeNode(Base):
     allocatable_vcpus: Mapped[int] = mapped_column(Integer, nullable=False)
     allocatable_memory_mb: Mapped[int] = mapped_column(Integer, nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="READY")
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -106,7 +107,7 @@ class Instance(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(63), index=True, nullable=False)
     # 삭제 뒤 NULL로 비워 동일한 이름을 다시 쓸 수 있게 하는 unique 값이다.
-    active_name: Mapped[str | None] = mapped_column(String(63), unique=True, nullable=True)
+    active_name: Mapped[Optional[str]] = mapped_column(String(63), unique=True, nullable=True)
     owner_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     image_id: Mapped[str] = mapped_column(String(64), nullable=False)
     ssh_public_key_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -114,15 +115,15 @@ class Instance(Base):
     requested_memory_mb: Mapped[int] = mapped_column(Integer, nullable=False)
     requested_disk_gb: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=InstanceStatus.REQUESTED)
-    assigned_compute_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    provider_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    assigned_compute_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    provider_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     guest_username: Mapped[str] = mapped_column(String(63), nullable=False, default="clouduser")
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Operation(Base):
@@ -134,9 +135,9 @@ class Operation(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=OperationStatus.PENDING)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -145,8 +146,8 @@ class InstanceEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     instance_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    operation_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
-    previous_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    previous_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     next_status: Mapped[str] = mapped_column(String(32), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

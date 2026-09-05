@@ -15,6 +15,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from sqlalchemy import select
 
@@ -51,7 +52,7 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def add_event(session, instance: Instance, operation: Operation | None, previous: str | None, next_status: str, message: str) -> None:
+def add_event(session, instance: Instance, operation: Optional[Operation], previous: Optional[str], next_status: str, message: str) -> None:
     session.add(
         InstanceEvent(
             instance_id=instance.id,
@@ -63,7 +64,7 @@ def add_event(session, instance: Instance, operation: Operation | None, previous
     )
 
 
-def claim_next_operation() -> str | None:
+def claim_next_operation() -> Optional[str]:
     """단일 worker가 처리할 다음 PENDING 작업을 RUNNING으로 원자적으로 바꾼다."""
 
     with SessionLocal.begin() as session:
@@ -163,7 +164,7 @@ def execute_provisioner(compute_name: str, instance: Instance, image: Image, own
         raise RuntimeError(f"Ansible VM 생성 실패:\n{tail}")
 
 
-def find_guest_mac(compute_name: str, instance_name: str) -> str | None:
+def find_guest_mac(compute_name: str, instance_name: str) -> Optional[str]:
     inventory = scheduler.load_compute_hosts(ANSIBLE_DIRECTORY / "inventory" / "hosts.yml", ANSIBLE_DIRECTORY)
     host = next((item for item in inventory if item["name"] == compute_name), None)
     if not host:
@@ -179,12 +180,12 @@ def find_guest_mac(compute_name: str, instance_name: str) -> str | None:
     return addresses[-1].lower() if addresses else None
 
 
-def lease_ip_for_mac(mac: str) -> str | None:
+def lease_ip_for_mac(mac: str) -> Optional[str]:
     """ISC dhcpd lease history에서 해당 MAC의 가장 최근 active lease IP를 찾는다."""
 
     if not LEASE_FILE.is_file():
         return None
-    latest_ip: str | None = None
+    latest_ip: Optional[str] = None
     for match in LEASE_PATTERN.finditer(LEASE_FILE.read_text(encoding="utf-8", errors="replace")):
         body = match.group("body").lower()
         if f"hardware ethernet {mac.lower()};" in body and "binding state active;" in body:
@@ -192,7 +193,7 @@ def lease_ip_for_mac(mac: str) -> str | None:
     return latest_ip
 
 
-def mark_create_finished(operation_id: str, provider_ip: str | None) -> None:
+def mark_create_finished(operation_id: str, provider_ip: Optional[str]) -> None:
     with SessionLocal.begin() as session:
         operation = session.get(Operation, operation_id)
         instance = session.get(Instance, operation.instance_id) if operation else None

@@ -210,6 +210,10 @@
         set -euo pipefail
         source "{{ control_api_environment_file }}"
         source "{{ control_api_initial_credentials_file }}"
+        # source로 읽은 KEY=value는 현재 셸의 변수일 뿐이다. Python subprocess가
+        # os.environ에서 읽을 수 있도록 명시적으로 환경 변수로 내보낸다.
+        export PRIVATE_CLOUD_BOOTSTRAP_ADMIN_PASSWORD
+        export PRIVATE_CLOUD_BOOTSTRAP_MEMBER_PASSWORD
         "{{ control_api_venv }}/bin/python" -m app.bootstrap
       args:
         chdir: "{{ control_api_directory }}"

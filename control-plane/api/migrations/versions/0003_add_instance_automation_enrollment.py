@@ -28,13 +28,13 @@ def upgrade() -> None:
             "instances",
             sa.Column("automation_enrolled", sa.Boolean(), nullable=False, server_default=sa.false()),
         )
-    op.alter_column(
-        "instances",
-        "automation_enrolled",
-        existing_type=sa.Boolean(),
-        existing_nullable=False,
-        server_default=None,
-    )
+        op.alter_column(
+            "instances",
+            "automation_enrolled",
+            existing_type=sa.Boolean(),
+            existing_nullable=False,
+            server_default=None,
+        )
 
 
 def downgrade() -> None:

@@ -23,7 +23,8 @@ worker까지 같은 배포에 포함한다. `POST`는 즉시 `202 Accepted`를 �
 - `member`: 자신의 SSH key와 자신의 VM만 보는 사용자
 - `clouduser`: 생성된 guest VM 안의 고정 Linux 계정. 사용자는 이 계정에 자신이 등록한 SSH key로 접속한다.
 
-MariaDB는 다음 관계를 저장한다.
+MariaDB는 다음 관계를 저장한다. 상세한 실제 컬럼·외래키·soft delete 보존 규칙은
+[Control-plane 데이터 모델](data-model.md)에 기록한다.
 
 ```text
 users ──< ssh_public_keys
@@ -36,6 +37,10 @@ users ──< ssh_public_keys
 ```
 
 VM 생성은 `instances`와 `operations(CREATE/PENDING)`를 한 transaction으로 만든다. worker가 작업을 가져가 `SCHEDULING → PROVISIONING → WAITING_FOR_IP → ACTIVE`로 바꾸며, 실패한 이유도 operation과 event에 남긴다. 삭제도 별도 `DELETE` operation으로 처리한다.
+
+외부 browser는 `http://172.16.2.10:8080`의 Nginx portal로 접속한다. FastAPI는
+`127.0.0.1:8000`에서만 listen하고 Nginx가 같은 origin으로 reverse proxy한다. 이는 API port를
+관리망에 직접 노출하지 않기 위한 lab 범위의 경계다.
 
 ## 배포
 

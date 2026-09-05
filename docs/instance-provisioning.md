@@ -15,7 +15,10 @@ control의 Ansible
 
 `disk.qcow2`는 읽기 전용 GenericCloud 베이스 이미지의 backing file을 참조한다. 따라서 각 인스턴스에는 운영 중 변경된 블록만 별도로 저장된다. 베이스 이미지는 수정하지 않으며, 인스턴스 삭제 전까지 overlay와 seed 파일을 보존한다.
 
-`seed.img`는 `CIDATA` 라벨을 가진 NoCloud 디스크다. 최초 부팅 시 cloud-init이 여기서 hostname, `user1` 계정, control의 Ansible 공개키를 읽는다. 비밀번호 SSH 접속과 root SSH 접속은 사용하지 않는다. 로컬 실습에서 초기 구성 자동화를 위해 `user1`에 passwordless sudo를 부여하며, 운영 환경에서는 별도 권한 정책과 키 교체 정책을 적용한다.
+`seed.img`는 `CIDATA` 라벨을 가진 NoCloud 디스크다. 최초 부팅 시 cloud-init이 여기서 hostname,
+고정 guest 계정 `clouduser`, portal 사용자가 등록한 SSH 공개키를 읽는다. 비밀번호 SSH 접속과
+root SSH 접속은 사용하지 않는다. control → infrastructure 노드 자동화에는 별도의
+`private-cloud-ansible` 키를 사용하며, 사용자의 VM 접속 키와 섞지 않는다.
 
 ## 실행 예시
 
@@ -34,10 +37,10 @@ ansible-playbook \
   playbooks/provision-instance.yml
 ```
 
-VM이 DHCP lease를 받은 뒤 control에서 다음과 같이 접속할 수 있다. `<DHCP_IP>`는 control DHCP 풀 범위의 할당 주소다.
+VM이 DHCP lease를 받은 뒤 사용자 PC에서 다음과 같이 접속할 수 있다. `<DHCP_IP>`는 control DHCP 풀 범위의 할당 주소다.
 
 ```bash
-ssh -i ~/.ssh/private-cloud-ansible user1@<DHCP_IP>
+ssh -i ~/.ssh/private-cloud clouduser@<DHCP_IP>
 ```
 
 ## 검증

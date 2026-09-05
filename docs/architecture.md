@@ -17,10 +17,24 @@ control의 `dhcpd`는 provider NIC(`ens192`)에서만 동작하며 `172.16.8.151
 
 ## 구성 요소
 
-- `control`: API, scheduler, MariaDB, DHCP, Ansible, Prometheus, Grafana, 관리자 웹 애플리케이션
+- `control`: Nginx portal, FastAPI, MariaDB, worker, scheduler, DHCP, Ansible, Prometheus, Grafana
 - `compute1`, `compute2`: libvirt/KVM, Open vSwitch
 - `storage1`, `storage2`: GlusterFS replica 2 데이터 노드
-- instance: cloud-init으로 초기화하고 Ansible로 관리하는 libvirt guest
+- instance: cloud-init으로 초기화하고 사용자 SSH 공개키로 접속하는 libvirt guest
+
+## Control-plane 요청 경로
+
+```text
+browser
+  └── http://172.16.2.10:8080 (Nginx)
+        └── FastAPI :8000 (localhost only)
+              ├── MariaDB: users / instances / operations / events
+              └── worker: scheduler → Ansible → libvirt/KVM
+```
+
+`POST /v1/instances`는 실제 VM 생성을 기다리지 않고 `202 Accepted`와 함께 MariaDB에
+`CREATE/PENDING` operation을 남긴다. 독립 worker가 작업을 가져가 현재 libvirt 예약량을
+비교하고 compute를 선택한 뒤, 선택된 노드에서 Ansible 프로비저너를 실행한다.
 
 ## 프로비저닝 계층
 
@@ -51,8 +65,16 @@ control과 compute는 `172.16.8.21`을 기본 volfile 서버로, `172.16.8.22`�
 ## Instance 생명주기
 
 ```text
-REQUESTED → SCHEDULING → IMAGE_PREPARING → CREATING
-→ WAITING_FOR_IP → CONFIGURING → ACTIVE
+REQUESTED → SCHEDULING → PROVISIONING → WAITING_FOR_IP → ACTIVE
+ACTIVE → DELETE_REQUESTED → DELETING → DELETED
 ```
 
-오류가 발생하면 `ERROR` 상태로 전환하고, 중간에 생성된 볼륨·lease·DB reservation을 정리합니다.
+생성·삭제 도중 오류가 발생하면 해당 instance는 `ERROR`, operation은 `FAILED`가 되고 오류 원인은
+MariaDB의 operation·event 이력에 남는다. `DELETED` instance 행은 soft delete로 보존하며,
+운영 목록과 scheduler는 `deleted_at IS NULL` 행만 사용한다.
+
+## 관찰 가능성
+
+각 control·compute·storage 노드는 node exporter로 `:9100/metrics`를 노출한다. Prometheus는
+control에서 15초마다 5개 target을 수집하고 7일간 TSDB에 보관한다. Grafana는 management IP의
+`:3000`에서만 제공하며, Git으로 관리하는 dashboard JSON을 Ansible이 provisioning 경로에 배포한다.

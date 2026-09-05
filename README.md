@@ -23,7 +23,7 @@ control ── API / scheduler / MariaDB / DHCP / monitoring
    └── storage2 ── GlusterFS replica data
 ```
 
-현재 portal은 control의 FastAPI process와 MariaDB로 구성하며, 외부 공개 전에는 Nginx·HTTPS를 추가합니다.
+portal은 control의 Nginx(`172.16.2.10:8080`)가 FastAPI(`127.0.0.1:8000`)를 reverse proxy하는 구조다. 이 lab은 관리망 HTTP로만 제공하며, 외부 공개 환경에서는 TLS termination·HTTPS-only cookie·별도 ingress 정책을 추가한다.
 
 ## 저장소 구조
 
@@ -46,10 +46,13 @@ docs/           # 공개 아키텍처 및 설치 문서
 - [`cloudctl` 운영 CLI](docs/cloudctl.md)
 - [구축 진행 현황과 다음 단계](docs/roadmap.md)
 - [Control API와 MariaDB 상태 저장소](docs/control-api.md)
+- [Control-plane 데이터 모델과 보존 정책](docs/data-model.md)
 
 ## 현재 상태
 
-개발 진행 중입니다. 재현 가능한 설정과 검증 절차를 단계적으로 구축하고 있습니다.
+VMware 기반 lab에서 control·compute 2대·storage 2대와 self-service portal, VM 생성/삭제,
+Prometheus/Grafana 관찰 가능성까지 배포·검증했다. 남은 고가용성·migration·CI 범위는
+[roadmap](docs/roadmap.md)에 의도적으로 분리해 둔다.
 
 ## 보안
 

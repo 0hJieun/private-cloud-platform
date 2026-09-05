@@ -15,12 +15,18 @@ receivers:
 {% if monitoring_slack_webhook_url | trim | length > 0 %}
   - name: slack-private-cloud
     slack_configs:
-      - api_url: '{{ monitoring_slack_webhook_url | trim }}'
+      # to_json은 URL을 YAML string으로 안전하게 escaping한다. secret에 예상하지 못한
+      # quote가 있어도 YAML 구조가 깨지지 않으며, 형식 검증 task가 URL 자체를 거절한다.
+      - api_url: {{ monitoring_slack_webhook_url | trim | to_json }}
         send_resolved: true
-        title: '{% raw %}{{ .Status | toUpper }}{% endraw %} · Private Cloud'
-        text: >-
+        title: '{% raw %}{{ if eq .Status "firing" }}🚨 장애 감지{{ else }}✅ 복구 완료{{ end }}{% endraw %} · Private Cloud'
+        # YAML literal block을 사용해 Slack mrkdwn의 실제 줄바꿈을 보존한다.
+        text: |-
           {% raw %}{{ range .Alerts }}{% endraw %}
-          *{% raw %}{{ .Labels.alertname }}{% endraw %}* — {% raw %}{{ .Annotations.summary }}{% endraw %}
+          *알림*  `{% raw %}{{ .Labels.alertname }}{% endraw %}`
+          *대상*  {% raw %}{{ .Labels.node }}{% endraw %}{% raw %}{{ with .Labels.cloud_instance_name }} / {{ . }}{% endraw %}{% raw %}{{ end }}{% endraw %}
+          *상태*  {% raw %}{{ if eq .Status "firing" }}발생{{ else }}복구{{ end }}{% endraw %}
+          *요약*  {% raw %}{{ .Annotations.summary }}{% endraw %}
           {% raw %}{{ .Annotations.description }}{% endraw %}
           {% raw %}{{ end }}{% endraw %}
 {% endif %}

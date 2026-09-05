@@ -259,8 +259,10 @@
         that:
           - >-
             monitoring_slack_webhook_url.stdout | trim | length == 0 or
-            monitoring_slack_webhook_url.stdout | trim is match('^https://hooks\\.slack\\.com/services/')
-        fail_msg: /etc/private-cloud/alertmanager.env의 Slack Incoming Webhook URL 형식을 확인하세요.
+            monitoring_slack_webhook_url.stdout | trim is match('^https://hooks\\.slack\\.com/services/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+$')
+        fail_msg: >-
+          /etc/private-cloud/alertmanager.env에는 https://hooks.slack.com/services/로 시작하는
+          URL만 한 줄로 넣어야 합니다. 따옴표, Markdown backtick, 공백은 넣지 마세요.
       no_log: true
 
     - name: Alertmanager 알림 라우팅 설정 배포

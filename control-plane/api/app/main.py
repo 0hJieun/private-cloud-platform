@@ -78,7 +78,13 @@ ALLOCATION_STATUSES = {
 }
 
 
-def instance_read(instance: Instance, session: Session) -> InstanceRead:
+def instance_read(
+    instance: Instance,
+    session: Session,
+    *,
+    node_observations: Optional[dict[str, str]] = None,
+    instance_observations: Optional[dict[str, str]] = None,
+) -> InstanceRead:
     """외부 API에는 UUID 대신 운영자가 읽을 수 있는 식별자를 보인다.
 
     일반 member는 ownership filter를 거친 자신의 instance만 조회한다. admin 화면에는
@@ -100,6 +106,12 @@ def instance_read(instance: Instance, session: Session) -> InstanceRead:
         monitoring_enabled=instance.monitoring_enabled,
         automation_enrolled=instance.automation_enrolled,
         status=instance.status,
+        runtime_state=instance_runtime_state(
+            instance,
+            compute.name if compute else None,
+            node_observations or {},
+            instance_observations or {},
+        ),
         assigned_compute=compute.name if compute else None,
         provider_ip=instance.provider_ip,
         guest_username=instance.guest_username,
@@ -162,6 +174,57 @@ def prometheus_scalar(query: str) -> tuple[Optional[float], Optional[datetime]]:
         # exporter 기동 직후처럼 아직 표본이 없을 수 있다. portal 요청 전체를 500으로
         # 만들지 않고, UI가 "수집 대기"로 표현하게 한다.
         return None, None
+
+
+def prometheus_up_observations() -> tuple[dict[str, str], dict[str, str]]:
+    """Prometheus의 up metric을 portal용 현재 관측 상태로 정규화한다.
+
+    DB lifecycle을 덮어쓰지 않는다. API 요청마다 한 번의 고정 PromQL만 실행하고,
+    browser에는 다른 VM을 조회할 수 있는 임의 PromQL proxy를 노출하지 않는다.
+    Prometheus가 일시적으로 응답하지 않으면 UNKNOWN으로 안전하게 표시한다.
+    """
+
+    query = 'up{job=~"node|instance"}'
+    url = f"{get_settings().prometheus_url}/api/v1/query?{urlencode({'query': query})}"
+    node_states: dict[str, str] = {}
+    instance_states: dict[str, str] = {}
+    try:
+        with urlopen(url, timeout=3) as response:  # nosec B310 - control loopback URL only
+            payload = json.load(response)
+        for item in payload.get("data", {}).get("result", []):
+            labels = item.get("metric", {})
+            _, value = item.get("value", [None, None])
+            observed = "UP" if float(value) == 1 else "DOWN" if float(value) == 0 else "UNKNOWN"
+            if labels.get("job") == "node" and labels.get("node"):
+                node_states[labels["node"]] = observed
+            elif labels.get("job") == "instance" and labels.get("cloud_instance_id"):
+                instance_states[labels["cloud_instance_id"]] = observed
+    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        pass
+    return node_states, instance_states
+
+
+def instance_runtime_state(
+    instance: Instance,
+    compute_name: Optional[str],
+    node_observations: dict[str, str],
+    instance_observations: dict[str, str],
+) -> str:
+    """VM 생성 이력과 현재 실행 관측을 섞지 않고 화면용 상태를 만든다."""
+
+    if instance.status != InstanceStatus.ACTIVE:
+        return "NOT_READY"
+    compute_state = node_observations.get(compute_name or "", "UNKNOWN")
+    if compute_state == "DOWN":
+        return "HOST_DOWN"
+    if instance.monitoring_enabled:
+        guest_state = instance_observations.get(instance.id, "UNKNOWN")
+        if guest_state == "UP":
+            return "RUNTIME_UP"
+        if guest_state == "DOWN":
+            return "GUEST_UNREACHABLE"
+        return "WAITING_FOR_METRICS"
+    return "UNMONITORED" if compute_state == "UP" else "UNKNOWN"
 
 
 def instance_selector(instance: Instance) -> str:
@@ -372,6 +435,7 @@ def admin_overview(_: User = Depends(require_admin), session: Session = Depends(
 
     instances = list(session.scalars(select(Instance).where(Instance.deleted_at.is_(None))))
     compute_nodes = list(session.scalars(select(ComputeNode).order_by(ComputeNode.name)))
+    node_observations, _ = prometheus_up_observations()
     allocations: list[ComputeAllocationRead] = []
     for node in compute_nodes:
         assigned = [item for item in instances if item.assigned_compute_id == node.id and item.status in ALLOCATION_STATUSES]
@@ -379,6 +443,7 @@ def admin_overview(_: User = Depends(require_admin), session: Session = Depends(
             ComputeAllocationRead(
                 name=node.name,
                 state=node.state,
+                observed_state=node_observations.get(node.name, "UNKNOWN"),
                 allocatable_vcpus=node.allocatable_vcpus,
                 allocatable_memory_mb=node.allocatable_memory_mb,
                 allocated_vcpus=sum(item.requested_vcpus for item in assigned),
@@ -400,7 +465,16 @@ def list_instances(user: User = Depends(require_user), session: Session = Depend
     statement = select(Instance).where(Instance.deleted_at.is_(None)).order_by(Instance.created_at.desc())
     if user.role != UserRole.ADMIN:
         statement = statement.where(Instance.owner_id == user.id)
-    return [instance_read(item, session) for item in session.scalars(statement)]
+    node_observations, instance_observations = prometheus_up_observations()
+    return [
+        instance_read(
+            item,
+            session,
+            node_observations=node_observations,
+            instance_observations=instance_observations,
+        )
+        for item in session.scalars(statement)
+    ]
 
 
 @app.post("/v1/instances/preflight", response_model=InstancePreflightRead, tags=["instances"])
@@ -417,8 +491,13 @@ def preflight_instance_request(
 
     name_available = session.scalar(select(Instance.id).where(Instance.active_name == payload.name)) is None
     instances = list(session.scalars(select(Instance).where(Instance.deleted_at.is_(None))))
+    node_observations, _ = prometheus_up_observations()
     eligible_compute_count = 0
     for node in session.scalars(select(ComputeNode)):
+        # Prometheus가 DOWN이라고 확인한 host는 예약량이 남아도 UI 후보에서 제외한다.
+        # UNKNOWN은 monitoring 일시 오류만으로 생성 버튼을 막지 않도록 worker의 SSH 검증에 맡긴다.
+        if node_observations.get(node.name) == "DOWN":
+            continue
         assigned = [item for item in instances if item.assigned_compute_id == node.id and item.status in ALLOCATION_STATUSES]
         reserved_vcpus = sum(item.requested_vcpus for item in assigned)
         reserved_memory_mb = sum(item.requested_memory_mb for item in assigned)
@@ -443,7 +522,13 @@ def preflight_instance_request(
 def get_instance(
     instance_id: str, user: User = Depends(require_user), session: Session = Depends(get_session)
 ) -> InstanceRead:
-    return instance_read(owned_instance_or_404(instance_id, user, session), session)
+    node_observations, instance_observations = prometheus_up_observations()
+    return instance_read(
+        owned_instance_or_404(instance_id, user, session),
+        session,
+        node_observations=node_observations,
+        instance_observations=instance_observations,
+    )
 
 
 @app.post(

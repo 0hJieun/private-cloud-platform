@@ -264,10 +264,27 @@ def default_ansible_directory() -> Path:
 def query_capacities(
     ansible_directory: Path, private_key: Path, remote_user: str
 ) -> list[Capacity]:
-    """inventory의 모든 compute에 접속해 현재 scheduler 입력을 수집한다."""
+    """접속 가능한 compute만 scheduler 후보로 반환한다.
+
+    한 노드의 SSH·libvirt 장애가 다른 정상 노드의 신규 VM 요청까지 막지 않게 한다.
+    다만 모든 compute가 불가능하면 원인을 포함해 명시적으로 실패한다. 이 함수는
+    신규 배치의 후보 수집용이며, down host의 기존 VM 삭제·조작을 성공한 것처럼
+    처리하지는 않는다.
+    """
 
     hosts = load_compute_hosts(ansible_directory / "inventory" / "hosts.yml", ansible_directory)
-    return [inspect_capacity(host, private_key, remote_user) for host in hosts]
+    capacities: list[Capacity] = []
+    unavailable: list[str] = []
+    for host in hosts:
+        try:
+            capacities.append(inspect_capacity(host, private_key, remote_user))
+        except RuntimeError as error:
+            detail = str(error).splitlines()[-1].strip() or "SSH 또는 libvirt 확인 실패"
+            unavailable.append(f"{host['name']}: {detail}")
+    if not capacities:
+        detail = "; ".join(unavailable) or "inventory에 compute 노드가 없습니다."
+        raise RuntimeError(f"접속 가능한 compute 노드가 없습니다. {detail}")
+    return capacities
 
 
 def find_instance(capacities: list[Capacity], instance_name: str) -> Optional[Capacity]:

@@ -97,7 +97,10 @@ class InstanceRead(BaseModel):
     requested_disk_gb: int
     monitoring_enabled: bool
     automation_enrolled: bool
+    # status는 DB lifecycle, runtime_state는 Prometheus가 관측한 현재 접근 가능성이다.
+    # 서로 다른 사실을 한 필드에 덮어쓰지 않아 장애 뒤에도 생성·삭제 이력을 보존한다.
     status: str
+    runtime_state: str
     assigned_compute: Optional[str]
     provider_ip: Optional[str]
     guest_username: str
@@ -133,7 +136,9 @@ class OperationRead(BaseModel):
 
 class ComputeAllocationRead(BaseModel):
     name: str
+    # state는 배치 정책상 관리 상태, observed_state는 node exporter 기반 현재 관측 상태다.
     state: str
+    observed_state: str
     allocatable_vcpus: int
     allocatable_memory_mb: int
     allocated_vcpus: int

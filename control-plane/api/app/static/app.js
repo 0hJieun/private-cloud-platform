@@ -75,9 +75,11 @@ function resourceLabel(instance) { return `${instance.requested_vcpus} vCPU · $
 function statusLabel(status) {
   return ({
     REQUESTED: "요청됨", SCHEDULING: "배치 중", PROVISIONING: "생성 중", WAITING_FOR_IP: "IP 대기",
-    ACTIVE: "실행 중", ERROR: "오류", DELETE_REQUESTED: "삭제 요청", DELETING: "삭제 중", DELETED: "삭제됨",
+    ACTIVE: "생성 완료", ERROR: "오류", DELETE_REQUESTED: "삭제 요청", DELETING: "삭제 중", DELETED: "삭제됨",
     PENDING: "대기", RUNNING: "실행 중", SUCCEEDED: "완료", FAILED: "실패",
-    UP: "정상 수집", DOWN: "수집 실패", WAITING_FOR_METRICS: "수집 대기", WAITING_FOR_INSTANCE: "VM 기동 대기", DISABLED: "비활성",
+    UP: "정상 수집", DOWN: "수집 실패", RUNTIME_UP: "실행 관측 정상", HOST_DOWN: "호스트 장애",
+    GUEST_UNREACHABLE: "Guest 관측 실패", UNMONITORED: "미관측", UNKNOWN: "상태 미확인", NOT_READY: "생성 대기",
+    WAITING_FOR_METRICS: "수집 대기", WAITING_FOR_INSTANCE: "VM 기동 대기", DISABLED: "비활성",
   })[status] || status;
 }
 function statusBadge(status) {
@@ -86,6 +88,9 @@ function statusBadge(status) {
   return badge;
 }
 function monitoringStateLabel(value) { return statusLabel(value); }
+function computeObservationLabel(value) {
+  return ({ UP: "관측 UP", DOWN: "관측 DOWN", UNKNOWN: "관측 확인 중" })[value] || `관측 ${value}`;
+}
 
 function setText(selector, value) { $(selector).textContent = value; }
 function fillSelect(select, values, valueKey, label) {
@@ -217,7 +222,7 @@ async function loadKeysAndImages() {
 
 function renderOverview() {
   const visible = state.instances;
-  const running = visible.filter((item) => item.status === "ACTIVE");
+  const running = visible.filter((item) => item.runtime_state === "RUNTIME_UP");
   const processing = visible.filter((item) => ACTIVE_STATUSES.has(item.status) && item.status !== "ACTIVE");
   const monitored = visible.filter((item) => item.monitoring_enabled);
   const admin = isAdmin();
@@ -228,9 +233,9 @@ function renderOverview() {
   setText("#summary-label-one", admin ? "전체 인스턴스" : "내 인스턴스");
   setText("#summary-one", String(visible.length));
   setText("#summary-one-note", processing.length ? `처리 중 ${processing.length}개` : "처리 대기 없음");
-  setText("#summary-label-two", "실행 중");
+  setText("#summary-label-two", "실행 관측 정상");
   setText("#summary-two", String(running.length));
-  setText("#summary-two-note", admin ? "전체 워크로드 기준" : "내 VM 기준");
+  setText("#summary-two-note", "관리형 모니터링 exporter 기준");
   setText("#summary-label-three", "관리형 모니터링");
   setText("#summary-three", String(monitored.length));
   setText("#summary-three-note", monitored.length ? "guest OS exporter 선택됨" : "선택된 VM 없음");
@@ -243,7 +248,7 @@ function renderOverview() {
     const info = document.createElement("div");
     const title = make("strong", { text: instance.name });
     const meta = make("div", { className: "recent-meta" });
-    meta.append(statusBadge(instance.status), make("span", { text: imageLabel(instance) }), make("span", { text: instance.assigned_compute || "배치 대기" }));
+    meta.append(statusBadge(instance.status), statusBadge(instance.runtime_state), make("span", { text: imageLabel(instance) }), make("span", { text: instance.assigned_compute || "배치 대기" }));
     if (admin) meta.append(make("span", { text: `소유자 ${instance.owner_username}` }));
     info.append(title, meta);
     const detail = make("button", { className: "quiet mini-action", text: "상세" });
@@ -260,7 +265,7 @@ function renderInstances() {
   if (!state.instances.length) {
     const row = document.createElement("tr");
     const cell = make("td", { text: "표시할 인스턴스가 없습니다." });
-    cell.colSpan = admin ? 8 : 7;
+    cell.colSpan = admin ? 9 : 8;
     row.append(cell);
     body.append(row);
     return;
@@ -270,6 +275,7 @@ function renderInstances() {
     row.append(make("td", { text: instance.name }));
     if (admin) row.append(make("td", { text: instance.owner_username }));
     const statusCell = document.createElement("td"); statusCell.append(statusBadge(instance.status)); row.append(statusCell);
+    const runtimeCell = document.createElement("td"); runtimeCell.append(statusBadge(instance.runtime_state)); row.append(runtimeCell);
     row.append(make("td", { text: imageLabel(instance) }));
     row.append(make("td", { className: "resource-text", text: resourceLabel(instance) }));
     row.append(make("td", { text: instance.assigned_compute || "scheduler 대기" }));
@@ -318,7 +324,8 @@ function renderAdminOperations() {
   cards.replaceChildren();
   for (const node of state.overview.compute_nodes) {
     const card = make("article", { className: "compute-card" });
-    card.append(make("h3", { text: node.name }), make("p", { text: `${node.state} · 배치 VM ${node.active_instances}개` }));
+    const placementState = node.state === "READY" ? "배치 등록" : node.state;
+    card.append(make("h3", { text: node.name }), make("p", { text: `${placementState} · ${computeObservationLabel(node.observed_state)} · 배치 VM ${node.active_instances}개` }));
     card.append(capacityBar("예약 vCPU", node.allocated_vcpus, node.allocatable_vcpus, "vCPU"));
     card.append(capacityBar("예약 메모리", node.allocated_memory_mb, node.allocatable_memory_mb, "MB"));
     const list = make("div", { className: "placement-list" });
@@ -327,7 +334,7 @@ function renderAdminOperations() {
     for (const instance of assigned) {
       const item = make("div", { className: "placement-item" });
       const info = document.createElement("div");
-      info.append(make("p", { text: instance.name }), make("small", { text: `${instance.owner_username} · ${resourceLabel(instance)} · ${statusLabel(instance.status)}` }));
+      info.append(make("p", { text: instance.name }), make("small", { text: `${instance.owner_username} · ${resourceLabel(instance)} · ${statusLabel(instance.status)} · ${statusLabel(instance.runtime_state)}` }));
       const detail = make("button", { className: "quiet mini-action", text: "상세" });
       detail.onclick = () => openInstanceDetail(instance);
       item.append(info, detail); list.append(item);
@@ -358,7 +365,7 @@ function renderDetail(instance) {
     ["소유자", instance.owner_username], ["이미지", imageLabel(instance)], ["요청 자원", resourceLabel(instance)],
     ["모니터링", instance.monitoring_enabled ? "관리형 모니터링 활성화" : "비활성"],
     ["Ansible 관리", instance.automation_enrolled ? "control runtime inventory에 등록" : "자동화 키 주입 전 생성된 VM"],
-    ["상태", statusLabel(instance.status)],
+    ["생성 상태", statusLabel(instance.status)], ["실행 관측", statusLabel(instance.runtime_state)],
   ]);
   setDefinitionList("#detail-connectivity", [
     ["배치 compute", instance.assigned_compute || "scheduler 배치 대기"], ["Provider IP", instance.provider_ip || "DHCP IP 대기"],

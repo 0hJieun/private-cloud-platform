@@ -8,7 +8,7 @@
       "gridPos": { "h": 7, "w": 4, "x": 0, "y": 0 },
       "id": 1,
       "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "sum(up{job=\"instance\",cloud_instance_name=~\"$instance\"})", "refId": "A" }],
+      "targets": [{ "expr": "sum(up{job=\"instance\",cloud_instance_name=~\"$instance\"})", "instant": true, "refId": "A" }],
       "title": "정상 수집 VM",
       "type": "stat"
     },
@@ -18,7 +18,7 @@
       "gridPos": { "h": 7, "w": 4, "x": 4, "y": 0 },
       "id": 7,
       "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [{ "expr": "count(up{job=\"instance\",cloud_instance_name=~\"$instance\"} == 0)", "refId": "A" }],
+      "targets": [{ "expr": "count(up{job=\"instance\",cloud_instance_name=~\"$instance\"} == 0)", "instant": true, "refId": "A" }],
       "title": "장애 VM 수",
       "type": "stat"
     },
@@ -114,5 +114,5 @@
   "time": { "from": "now-6h", "to": "now" },
   "title": "Private Cloud Instance Operations",
   "uid": "private-cloud-instances",
-  "version": 3
+  "version": 4
 }

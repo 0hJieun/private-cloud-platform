@@ -20,10 +20,14 @@ function formatDate(value) { return value ? new Date(value).toLocaleString("ko-K
 function statusBadge(status) { const span = document.createElement("span"); span.className = `status status-${status}`; span.textContent = status; return span; }
 
 function fillSelect(select, values, valueKey, label) {
+  // refresh()가 주기적으로 실행되어도 사용자가 고른 값을 유지한다.
+  // 기존 값이 더 이상 목록에 없을 때만 브라우저가 첫 항목을 선택한다.
+  const selectedValue = select.value;
   select.replaceChildren();
   for (const value of values) {
     const option = document.createElement("option"); option.value = value[valueKey]; option.textContent = label(value); select.append(option);
   }
+  if (values.some((value) => value[valueKey] === selectedValue)) select.value = selectedValue;
 }
 
 async function loadKeysAndImages() {

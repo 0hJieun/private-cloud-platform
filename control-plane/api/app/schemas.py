@@ -64,6 +64,26 @@ class InstanceCreate(BaseModel):
     monitoring_enabled: bool = False
 
 
+class InstancePreflightRequest(BaseModel):
+    """생성 화면의 사전 검사용 입력.
+
+    이 값은 reservation 기반 UX 힌트일 뿐, 실제 생성 시 worker scheduler의
+    live capacity 검사를 대체하지 않는다.
+    """
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,62}$", examples=["app01"])
+    vcpus: int = Field(default=1, ge=1, le=2)
+    memory_mb: int = Field(default=1024, ge=512, le=2048)
+    disk_gb: int = Field(default=10, ge=10, le=100)
+
+
+class InstancePreflightRead(BaseModel):
+    name_available: bool
+    capacity_available: bool
+    eligible_compute_count: int
+    message: str
+
+
 class InstanceRead(BaseModel):
     id: str
     name: str

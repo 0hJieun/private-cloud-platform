@@ -16,6 +16,15 @@ member는 다음 화면만 사용한다.
 - **VM 생성**: 이미지·flavor·공개키·관리형 모니터링을 선택해 durable operation 생성
 - **SSH 키**: 개인키가 아닌 공개키 등록
 
+VM 생성 form은 입력 중 `POST /v1/instances/preflight`으로 다음을 확인한다.
+
+- 전 사용자 기준으로 같은 `active_name`이 이미 있는지
+- DB reservation 기준으로 요청 vCPU·메모리를 수용할 compute가 한 대 이상 있는지
+
+중복 이름 또는 예약 수용 불가이면 생성 버튼을 비활성화한다. 다만 이 결과는 빠른
+UX를 위한 사전 검사다. 동시 요청과 실제 host의 순간 메모리 변화가 있을 수 있으므로,
+worker scheduler가 libvirt domain과 live memory를 다시 확인하는 것이 최종 판단이다.
+
 인스턴스 상세의 monitoring 카드는 API가 인스턴스 소유권을 확인한 뒤, 고정된
 PromQL로 조회한 현재 CPU·메모리·디스크·네트워크 값만 반환한다. 브라우저가 임의
 PromQL을 실행하거나 타인의 VM을 조회할 수 없다.

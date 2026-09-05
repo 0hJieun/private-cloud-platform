@@ -40,6 +40,8 @@ from app.schemas import (
     ImageRead,
     InstanceCreate,
     InstanceMonitoringRead,
+    InstancePreflightRead,
+    InstancePreflightRequest,
     InstanceRead,
     LoginRequest,
     OperationRead,
@@ -62,6 +64,18 @@ app.add_middleware(
     same_site="lax",
     https_only=False,  # 현재 lab은 HTTP. Nginx HTTPS 배포 단계에서 true로 바꾼다.
 )
+
+
+# DB reservation을 합산할 때와 create preflight에서 같은 lifecycle 집합을 쓴다.
+# REQUESTED는 아직 compute에 배치되지 않아 reservation을 차지하지 않는다.
+ALLOCATION_STATUSES = {
+    InstanceStatus.SCHEDULING,
+    InstanceStatus.PROVISIONING,
+    InstanceStatus.WAITING_FOR_IP,
+    InstanceStatus.ACTIVE,
+    InstanceStatus.DELETE_REQUESTED,
+    InstanceStatus.DELETING,
+}
 
 
 def instance_read(instance: Instance, session: Session) -> InstanceRead:
@@ -355,19 +369,11 @@ def admin_overview(_: User = Depends(require_admin), session: Session = Depends(
     VM의 '예약량'이다. 두 종류를 혼동하지 않도록 UI에서 allocation이라고 표시한다.
     """
 
-    active_statuses = {
-        InstanceStatus.SCHEDULING,
-        InstanceStatus.PROVISIONING,
-        InstanceStatus.WAITING_FOR_IP,
-        InstanceStatus.ACTIVE,
-        InstanceStatus.DELETE_REQUESTED,
-        InstanceStatus.DELETING,
-    }
     instances = list(session.scalars(select(Instance).where(Instance.deleted_at.is_(None))))
     compute_nodes = list(session.scalars(select(ComputeNode).order_by(ComputeNode.name)))
     allocations: list[ComputeAllocationRead] = []
     for node in compute_nodes:
-        assigned = [item for item in instances if item.assigned_compute_id == node.id and item.status in active_statuses]
+        assigned = [item for item in instances if item.assigned_compute_id == node.id and item.status in ALLOCATION_STATUSES]
         allocations.append(
             ComputeAllocationRead(
                 name=node.name,
@@ -394,6 +400,42 @@ def list_instances(user: User = Depends(require_user), session: Session = Depend
     if user.role != UserRole.ADMIN:
         statement = statement.where(Instance.owner_id == user.id)
     return [instance_read(item, session) for item in session.scalars(statement)]
+
+
+@app.post("/v1/instances/preflight", response_model=InstancePreflightRead, tags=["instances"])
+def preflight_instance_request(
+    payload: InstancePreflightRequest, _: User = Depends(require_user), session: Session = Depends(get_session)
+) -> InstancePreflightRead:
+    """생성 form의 빠른 피드백용 reservation preflight.
+
+    중복 name은 DB의 active_name unique 제약과 동일하게 검사한다. capacity는
+    DB에 이미 배치된 reservation만 기준으로 계산하므로 UI는 이 결과를 사전 안내와
+    버튼 비활성화에 사용한다. 실제 API create 뒤 worker가 libvirt/host 메모리를
+    다시 검사하는 것이 최종 권한 판단이다.
+    """
+
+    name_available = session.scalar(select(Instance.id).where(Instance.active_name == payload.name)) is None
+    instances = list(session.scalars(select(Instance).where(Instance.deleted_at.is_(None))))
+    eligible_compute_count = 0
+    for node in session.scalars(select(ComputeNode)):
+        assigned = [item for item in instances if item.assigned_compute_id == node.id and item.status in ALLOCATION_STATUSES]
+        reserved_vcpus = sum(item.requested_vcpus for item in assigned)
+        reserved_memory_mb = sum(item.requested_memory_mb for item in assigned)
+        if node.allocatable_vcpus - reserved_vcpus >= payload.vcpus and node.allocatable_memory_mb - reserved_memory_mb >= payload.memory_mb:
+            eligible_compute_count += 1
+    capacity_available = eligible_compute_count > 0
+    if not name_available:
+        message = "같은 이름의 삭제되지 않은 인스턴스 요청이 이미 있습니다."
+    elif not capacity_available:
+        message = "현재 예약 기준으로 요청을 수용할 compute가 없습니다."
+    else:
+        message = f"예약 기준 {eligible_compute_count}개 compute가 요청을 수용할 수 있습니다."
+    return InstancePreflightRead(
+        name_available=name_available,
+        capacity_available=capacity_available,
+        eligible_compute_count=eligible_compute_count,
+        message=message,
+    )
 
 
 @app.get("/v1/instances/{instance_id}", response_model=InstanceRead, tags=["instances"])

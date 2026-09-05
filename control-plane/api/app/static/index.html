@@ -112,8 +112,12 @@
                 <label>VM 이름 <input id="instance-name" pattern="[a-z][a-z0-9-]{0,62}" placeholder="web01" required></label>
                 <div class="form-grid"><label>이미지 <select id="instance-image" required></select></label><label>접속 공개키 <select id="instance-key" required></select></label></div>
                 <div class="resource-row"><label>vCPU <select id="instance-vcpus"><option value="1">1 vCPU</option><option value="2">2 vCPU</option></select></label><label>메모리 <select id="instance-memory"><option value="1024">1 GB</option><option value="2048">2 GB</option></select></label><label>디스크 <select id="instance-disk"><option value="10">10 GB</option><option value="20">20 GB</option></select></label></div>
+                <div id="instance-preflight" class="preflight" aria-live="polite">
+                  <span id="preflight-state" class="status status-DISABLED">입력 대기</span>
+                  <p id="preflight-message">VM 이름과 자원을 선택하면 이름 중복과 예약 자원 수용 가능 여부를 확인합니다.</p>
+                </div>
                 <label class="check"><input id="instance-monitoring" type="checkbox"><span><strong>관리형 모니터링 활성화</strong><small>guest OS에 exporter를 설치하고, 이 포털에서 소유자 전용 상태를 확인합니다.</small></span></label>
-                <div class="form-actions"><button type="submit">생성 요청 등록</button><span class="hint">생성 후 배치는 자동으로 결정됩니다.</span></div>
+                <div class="form-actions"><button type="submit" disabled>생성 요청 등록</button><span class="hint">생성 후 배치는 자동으로 결정됩니다.</span></div>
               </form>
             </article>
           </section>

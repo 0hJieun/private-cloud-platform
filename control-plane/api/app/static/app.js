@@ -8,6 +8,9 @@ const state = {
   selectedInstance: null,
   activeView: "overview",
   refreshing: false,
+  preflight: null,
+  preflightSequence: 0,
+  preflightTimer: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -90,6 +93,69 @@ function fillSelect(select, values, valueKey, label) {
   }
   if (values.some((value) => value[valueKey] === selectedValue)) select.value = selectedValue;
 }
+function instancePreflightInput() {
+  const name = $("#instance-name").value.trim();
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(name)) return null;
+  return {
+    name,
+    vcpus: Number($("#instance-vcpus").value),
+    memory_mb: Number($("#instance-memory").value),
+    disk_gb: Number($("#instance-disk").value),
+  };
+}
+function renderPreflight(result = null, checking = false) {
+  const badge = $("#preflight-state");
+  const hint = $("#preflight-message");
+  const submit = $("#instance-form button[type='submit']");
+  if (checking) {
+    badge.className = "status status-WAITING_FOR_METRICS";
+    badge.textContent = "확인 중";
+    hint.textContent = "이름 중복과 scheduler 예약 자원을 확인하고 있습니다.";
+    submit.disabled = true;
+    return;
+  }
+  if (!result) {
+    badge.className = "status status-DISABLED";
+    badge.textContent = "입력 대기";
+    hint.textContent = "VM 이름과 자원을 선택하면 이름 중복과 예약 자원 수용 가능 여부를 확인합니다.";
+    submit.disabled = true;
+    return;
+  }
+  const available = result.name_available && result.capacity_available;
+  badge.className = `status status-${available ? "UP" : "DOWN"}`;
+  badge.textContent = available ? "요청 가능" : "요청 불가";
+  hint.textContent = available
+    ? `${result.message} 실제 생성 직전 worker가 compute의 live 자원을 다시 확인합니다.`
+    : result.message;
+  submit.disabled = !available;
+}
+async function checkPreflight() {
+  const request = instancePreflightInput();
+  if (!request) {
+    state.preflight = null;
+    renderPreflight();
+    return null;
+  }
+  const sequence = ++state.preflightSequence;
+  renderPreflight(null, true);
+  try {
+    const result = await api("/v1/instances/preflight", { method: "POST", body: JSON.stringify(request) });
+    if (sequence !== state.preflightSequence) return null;
+    state.preflight = result;
+    renderPreflight(result);
+    return result;
+  } catch (error) {
+    if (sequence !== state.preflightSequence) return null;
+    state.preflight = null;
+    renderPreflight();
+    $("#preflight-message").textContent = `사전 확인 실패: ${error.message}`;
+    return null;
+  }
+}
+function schedulePreflight() {
+  clearTimeout(state.preflightTimer);
+  state.preflightTimer = setTimeout(() => { checkPreflight().catch(() => {}); }, 350);
+}
 function setDefinitionList(selector, rows) {
   const target = $(selector);
   target.replaceChildren();
@@ -126,6 +192,7 @@ function showView(view) {
   setText("#page-eyebrow", eyebrow);
   setText("#page-title", title);
   if (view === "instance-detail") loadSelectedDetails().catch((error) => message(error.message, "error"));
+  if (view === "create") schedulePreflight();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -352,6 +419,7 @@ async function refresh() {
   try {
     await Promise.all([loadKeysAndImages(), loadInstances(), loadAdmin()]);
     if (state.selectedInstance) await loadSelectedDetails();
+    if (state.activeView === "create") schedulePreflight();
   } finally { state.refreshing = false; }
 }
 
@@ -395,12 +463,17 @@ $("#key-form").addEventListener("submit", async (event) => {
 $("#instance-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
+    const preflight = await checkPreflight();
+    if (!preflight || !preflight.name_available || !preflight.capacity_available) {
+      message("현재 입력으로는 VM 생성 요청을 제출할 수 없습니다. 사전 확인 결과를 확인하세요.", "error");
+      return;
+    }
     await api("/v1/instances", { method: "POST", body: JSON.stringify({
       name: $("#instance-name").value, image_id: $("#instance-image").value, ssh_public_key_id: $("#instance-key").value,
       vcpus: Number($("#instance-vcpus").value), memory_mb: Number($("#instance-memory").value), disk_gb: Number($("#instance-disk").value),
       monitoring_enabled: $("#instance-monitoring").checked,
     }) });
-    event.target.reset(); message("VM 생성 작업을 큐에 등록했습니다. scheduler가 배치와 생성을 처리합니다.", "success"); await refresh(); showView("instances");
+    event.target.reset(); state.preflight = null; renderPreflight(); message("VM 생성 작업을 큐에 등록했습니다. scheduler가 배치와 생성을 처리합니다.", "success"); await refresh(); showView("instances");
   } catch (error) { message(error.message, "error"); }
 });
 $("#user-form").addEventListener("submit", async (event) => {
@@ -410,6 +483,8 @@ $("#user-form").addEventListener("submit", async (event) => {
     event.target.reset(); message("사용자를 생성했습니다.", "success"); await loadAdmin();
   } catch (error) { message(error.message, "error"); }
 });
+$("#instance-name").addEventListener("input", schedulePreflight);
+["#instance-vcpus", "#instance-memory", "#instance-disk"].forEach((selector) => $(selector).addEventListener("change", schedulePreflight));
 
 (async () => {
   try { state.user = await api("/v1/me"); await enterPortal(); } catch (_) { /* 로그인 전 상태가 정상이다. */ }

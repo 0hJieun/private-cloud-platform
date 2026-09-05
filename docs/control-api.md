@@ -13,6 +13,11 @@ POST /v1/instances
   → MariaDB: SCHEDULING / PROVISIONING / ACTIVE 또는 ERROR로 갱신
 ```
 
+포털 form은 요청 전에 `POST /v1/instances/preflight`로 global name 중복과 DB
+reservation 기준의 수용 가능 compute 수를 확인한다. 이는 제출 UX를 위한 advisory
+검사이며, 실제 create worker는 libvirt와 host memory를 다시 읽어 최종 배치를 결정한다.
+따라서 API의 `active_name` unique 제약과 worker scheduler 검사는 모두 유지한다.
+
 worker까지 같은 배포에 포함한다. `POST`는 즉시 `202 Accepted`를 반환하고, 이후 worker가 scheduler와 Ansible을 호출한다. API 응답 속도와 실제 VM 생성 시간을 분리한 구조다.
 
 ## 역할과 데이터 모델

@@ -315,6 +315,12 @@ def process(operation_id: str) -> None:
                 time.sleep(5)
             mark_create_finished(operation_id, provider_ip)
         elif operation_type == OperationType.DELETE:
+            # scheduler 수용 실패처럼 배치 전에 ERROR가 난 요청은 compute·domain·overlay
+            # 디스크가 없다. 이 경우 Ansible destroy를 호출하지 않고 soft-delete 이력만
+            # 종료해야 같은 instance name을 다시 요청할 수 있다.
+            if not assigned_compute_id:
+                mark_delete_finished(operation_id)
+                return
             with SessionLocal() as session:
                 compute = session.get(ComputeNode, assigned_compute_id) if assigned_compute_id else None
                 compute_name = compute.name if compute else None

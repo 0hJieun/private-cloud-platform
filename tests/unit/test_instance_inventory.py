@@ -49,6 +49,23 @@ class RuntimeInventoryTests(unittest.TestCase):
         self.assertTrue(hostvars["ansible_become"])
         self.assertIn("StrictHostKeyChecking=accept-new", hostvars["ansible_ssh_common_args"])
 
+    def test_emits_ssh_aliases_from_the_same_runtime_inventory(self):
+        active = SimpleNamespace(
+            id="instance-1",
+            name="web01",
+            provider_ip="172.16.8.155",
+            guest_username="clouduser",
+            monitoring_enabled=True,
+        )
+
+        config = worker.runtime_ssh_config_payload(worker.runtime_inventory_payload([active]))
+
+        self.assertIn("Host web01", config)
+        self.assertIn("HostName 172.16.8.155", config)
+        self.assertIn("User clouduser", config)
+        self.assertIn("IdentityFile /tmp/private-cloud-instance-automation", config)
+        self.assertIn("StrictHostKeyChecking accept-new", config)
+
 
 if __name__ == "__main__":
     unittest.main()

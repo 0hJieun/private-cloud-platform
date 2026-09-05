@@ -38,6 +38,9 @@ RUNTIME_INVENTORY_PATH = Path(
 INSTANCE_KNOWN_HOSTS_PATH = Path(
     os.environ.get("PRIVATE_CLOUD_INSTANCE_KNOWN_HOSTS", "/home/user1/.local/share/private-cloud/ansible/known_hosts")
 ).expanduser()
+INSTANCE_SSH_CONFIG_PATH = Path(
+    os.environ.get("PRIVATE_CLOUD_INSTANCE_SSH_CONFIG", "/home/user1/.ssh/config.d/private-cloud-instances.conf")
+).expanduser()
 LEASE_FILE = Path("/var/lib/dhcpd/dhcpd.leases")
 
 sys.path[:0] = [str(API_DIRECTORY), str(SCHEDULER_DIRECTORY)]
@@ -109,8 +112,50 @@ def runtime_inventory_payload(instances: list[Instance]) -> dict:
     }
 
 
+def runtime_ssh_config_payload(inventory: dict) -> str:
+    """runtime inventory와 같은 desired state에서 `ssh <instance-name>` 별칭을 만든다.
+
+    Ansible inventory와 OpenSSH config는 서로 다른 소비자라 하나가 다른 하나를 직접
+    읽지는 않는다. 같은 worker 동기화 지점에서 둘을 함께 갱신해야 DHCP IP 변경과
+    인스턴스 삭제 뒤에도 별칭이 오래된 주소를 가리키지 않는다.
+    """
+
+    hosts = inventory["instances"]["hosts"]
+    hostvars = inventory["_meta"]["hostvars"]
+    lines = [
+        "# Private Cloud worker가 생성한 inner VM SSH 별칭입니다.",
+        "# 수동 편집하지 마세요. VM 생성·삭제·IP 변경 시 worker가 다시 만듭니다.",
+        "",
+    ]
+    for name in hosts:
+        host = hostvars[name]
+        lines.extend(
+            [
+                f"Host {name}",
+                f"    HostName {host['ansible_host']}",
+                f"    User {host['ansible_user']}",
+                f"    IdentityFile {host['ansible_ssh_private_key_file']}",
+                "    IdentitiesOnly yes",
+                f"    UserKnownHostsFile {INSTANCE_KNOWN_HOSTS_PATH}",
+                "    StrictHostKeyChecking accept-new",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def atomic_write_private_file(path: Path, content: str) -> None:
+    """권한을 제한한 runtime 파일을 원자적으로 교체한다."""
+
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    temporary_path.write_text(content, encoding="utf-8")
+    temporary_path.chmod(0o600)
+    os.replace(temporary_path, path)
+
+
 def sync_runtime_inventory() -> None:
-    """ACTIVE이며 새 automation key로 생성한 VM만 runtime inventory에 반영한다."""
+    """ACTIVE VM의 Ansible inventory와 SSH 별칭을 같은 desired state로 동기화한다."""
 
     with SessionLocal() as session:
         instances = list(
@@ -127,11 +172,8 @@ def sync_runtime_inventory() -> None:
         )
         payload = runtime_inventory_payload(instances)
 
-    RUNTIME_INVENTORY_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temporary_path = RUNTIME_INVENTORY_PATH.with_suffix(".tmp")
-    temporary_path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-    temporary_path.chmod(0o600)
-    os.replace(temporary_path, RUNTIME_INVENTORY_PATH)
+    atomic_write_private_file(RUNTIME_INVENTORY_PATH, json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+    atomic_write_private_file(INSTANCE_SSH_CONFIG_PATH, runtime_ssh_config_payload(payload))
 
 
 def sync_runtime_inventory_safely() -> None:

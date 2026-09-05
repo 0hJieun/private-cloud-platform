@@ -23,9 +23,28 @@ ansible-playbook playbooks/verify-managed-instances.yml
 | outer inventory | `automation/ansible/inventory/hosts.yml` | control/compute/storage 고정 호스트 | Git 관리 |
 | dynamic inventory adapter | `automation/ansible/inventory/instances.py` | runtime JSON을 `[instances]`로 반환 | Git 관리 |
 | runtime instance 상태 | `/home/user1/.local/share/private-cloud/ansible/instances.json` | ACTIVE VM IP·Ansible hostvars | Git 저장 안 함 |
+| outer SSH 별칭 | `/home/user1/.ssh/config.d/private-cloud-outer.conf` | control → compute/storage의 `ssh compute1` 등 | Ansible 관리 |
+| inner VM SSH 별칭 | `/home/user1/.ssh/config.d/private-cloud-instances.conf` | control → ACTIVE VM의 `ssh vm02` 등 | worker 관리 |
 
 `ansible.cfg`는 `hosts.yml`과 `instances.py`를 함께 inventory source로 읽는다. Python adapter는
 runtime JSON이 없거나 손상되어도 빈 `instances` 그룹을 반환하므로, outer 인프라 playbook을 막지 않는다.
+OpenSSH는 Ansible inventory를 읽지 않으므로 별칭 파일도 별도로 필요하다. `~/.ssh/config`의
+`Include /home/user1/.ssh/config.d/*.conf`은 한 번만 Ansible이 등록한다. 이후 outer 노드는
+고정 inventory에서, inner VM은 worker가 runtime inventory와 같은 시점에 생성·삭제한다.
+
+control에서 사용하는 예시는 다음과 같다.
+
+```bash
+# 고정 outer 노드
+ssh compute1
+ssh storage2
+
+# portal에서 생성되어 ACTIVE가 된 inner VM
+ssh vm02
+
+# 여러 inner VM에 같은 명령을 적용할 때는 SSH 반복보다 Ansible을 사용한다.
+ansible instances -m command -a 'hostnamectl --static'
+```
 
 ## 생성·삭제 흐름
 
@@ -36,13 +55,13 @@ portal 생성 요청
   → libvirt VM 부팅
   → control DHCP lease에서 provider IP 확인
   → instances.automation_enrolled=true, ACTIVE
-  → worker가 instances.json을 원자적으로 교체
-  → ansible instances -m ping 가능
+  → worker가 instances.json과 private-cloud-instances.conf를 원자적으로 교체
+  → ansible instances -m ping 및 ssh <instance-name> 가능
 
 portal 삭제 요청
   → Ansible이 libvirt domain·overlay·seed 제거
   → DB soft delete
-  → worker가 instances.json을 다시 생성해 해당 호스트 제거
+  → worker가 instances.json·SSH 별칭 파일을 다시 생성해 해당 호스트 제거
 ```
 
 ## 안전 경계와 한계

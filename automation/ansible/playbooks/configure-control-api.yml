@@ -23,6 +23,9 @@
     control_instance_inventory_directory: /home/user1/.local/share/private-cloud/ansible
     control_instance_inventory_file: /home/user1/.local/share/private-cloud/ansible/instances.json
     control_instance_known_hosts_file: /home/user1/.local/share/private-cloud/ansible/known_hosts
+    control_ssh_config_directory: /home/user1/.ssh/config.d
+    control_outer_ssh_config_file: /home/user1/.ssh/config.d/private-cloud-outer.conf
+    control_instance_ssh_config_file: /home/user1/.ssh/config.d/private-cloud-instances.conf
     control_api_database_name: private_cloud
     control_api_database_user: privatecloud
     control_api_service_name: private-cloud-api
@@ -81,6 +84,59 @@
         owner: user1
         group: user1
         mode: '0644'
+
+    # Ansible inventory는 Ansible만 읽는다. 사람이 `ssh compute1`, `ssh vm02`처럼
+    # 접근하려면 OpenSSH가 읽는 별칭 파일도 필요하다. GitHub용 기존 SSH 설정은 보존하고
+    # Include 한 줄과 이 프로젝트 전용 config.d 파일만 관리한다.
+    - name: user1 SSH 별칭 디렉터리 생성
+      ansible.builtin.file:
+        path: "{{ control_ssh_config_directory }}"
+        state: directory
+        owner: user1
+        group: user1
+        mode: '0700'
+
+    - name: user1 OpenSSH config에 프로젝트 별칭 include 등록
+      ansible.builtin.blockinfile:
+        path: /home/user1/.ssh/config
+        create: true
+        owner: user1
+        group: user1
+        mode: '0600'
+        insertbefore: BOF
+        marker: '# {mark} PRIVATE CLOUD MANAGED SSH CONFIG'
+        block: |
+          Include /home/user1/.ssh/config.d/*.conf
+
+    - name: outer 노드 SSH 별칭 생성
+      ansible.builtin.copy:
+        dest: "{{ control_outer_ssh_config_file }}"
+        owner: user1
+        group: user1
+        mode: '0600'
+        content: |
+          # Ansible hosts.yml의 고정 management address를 사용하는 outer 노드 별칭입니다.
+          # 이 파일은 configure-control-api.yml이 관리합니다. 수동 편집하지 마세요.
+          {% for outer_node in groups['compute_nodes'] + groups['storage_nodes'] %}
+          Host {{ outer_node }}
+              HostName {{ hostvars[outer_node].ansible_host }}
+              User user1
+              IdentityFile /home/user1/.ssh/private-cloud-ansible
+              IdentitiesOnly yes
+              StrictHostKeyChecking yes
+
+          {% endfor %}
+
+    - name: 빈 inner VM SSH 별칭 파일 초기화
+      ansible.builtin.copy:
+        dest: "{{ control_instance_ssh_config_file }}"
+        owner: user1
+        group: user1
+        mode: '0600'
+        force: false
+        content: |
+          # Private Cloud worker가 생성하는 inner VM SSH 별칭 파일입니다.
+          # VM lifecycle에 따라 자동 갱신됩니다. 수동 편집하지 마세요.
 
     - name: MariaDB Python과 portal proxy 패키지 설치
       ansible.builtin.dnf:
@@ -205,6 +261,7 @@
           PRIVATE_CLOUD_SESSION_SECRET={{ control_api_session_secret.stdout }}
           PRIVATE_CLOUD_PROMETHEUS_URL=http://127.0.0.1:9090
           PRIVATE_CLOUD_MONITORING_DISCOVERY_TOKEN={{ control_api_monitoring_discovery_token.stdout }}
+          PRIVATE_CLOUD_INSTANCE_SSH_CONFIG={{ control_instance_ssh_config_file }}
           PRIVATE_CLOUD_WORKER_INTERVAL_SECONDS=5
       no_log: true
       when: not control_api_environment.stat.exists
@@ -231,6 +288,16 @@
       when:
         - control_api_environment.stat.exists
         - control_api_monitoring_token_present.rc | default(1) != 0
+
+    - name: 기존 API 환경에 inner VM SSH 별칭 파일 경로 추가
+      ansible.builtin.lineinfile:
+        path: "{{ control_api_environment_file }}"
+        regexp: '^PRIVATE_CLOUD_INSTANCE_SSH_CONFIG='
+        line: 'PRIVATE_CLOUD_INSTANCE_SSH_CONFIG={{ control_instance_ssh_config_file }}'
+        owner: root
+        group: root
+        mode: '0600'
+      when: control_api_environment.stat.exists
 
     # root은 MariaDB unix socket 인증으로만 사용한다. 앱은 아래 전용 DB 계정으로 접속한다.
     - name: API 전용 database와 최소 권한 사용자 구성

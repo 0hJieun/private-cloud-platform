@@ -20,13 +20,7 @@ receivers:
       - api_url: {{ monitoring_slack_webhook_url | trim | to_json }}
         send_resolved: true
         title: '{% raw %}{{ if eq .Status "firing" }}🚨 장애 감지{{ else }}✅ 복구 완료{{ end }}{% endraw %} · Private Cloud'
-        # YAML literal block을 사용해 Slack mrkdwn의 실제 줄바꿈을 보존한다.
-        text: |-
-          {% raw %}{{ range .Alerts }}{% endraw %}
-          *알림*  `{% raw %}{{ .Labels.alertname }}{% endraw %}`
-          *대상*  {% raw %}{{ .Labels.node }}{% endraw %}{% raw %}{{ with .Labels.cloud_instance_name }} / {{ . }}{% endraw %}{% raw %}{{ end }}{% endraw %}
-          *상태*  {% raw %}{{ if eq .Status "firing" }}발생{{ else }}복구{{ end }}{% endraw %}
-          *요약*  {% raw %}{{ .Annotations.summary }}{% endraw %}
-          {% raw %}{{ .Annotations.description }}{% endraw %}
-          {% raw %}{{ end }}{% endraw %}
+        # YAML double-quoted scalar의 \n escape는 Alertmanager에 실제 newline으로 전달된다.
+        # Jinja block whitespace 처리에 의존하지 않아 Slack mrkdwn의 줄 구조가 유지된다.
+        text: "{% raw %}{{ range .Alerts }}{% endraw %}*알림* `{% raw %}{{ .Labels.alertname }}{% endraw %}`\n*대상* {% raw %}{{ .Labels.node }}{% endraw %}{% raw %}{{ with .Labels.cloud_instance_name }} / {{ . }}{% endraw %}{% raw %}{{ end }}{% endraw %}\n*상태* {% raw %}{{ if eq .Status \"firing\" }}발생{{ else }}복구{{ end }}{% endraw %}\n*요약* {% raw %}{{ .Annotations.summary }}{% endraw %}\n{% raw %}{{ .Annotations.description }}{% endraw %}\n---\n{% raw %}{{ end }}{% endraw %}"
 {% endif %}

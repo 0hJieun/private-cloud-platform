@@ -5,8 +5,10 @@
   become: true
 
   vars:
-    control_repository_root: /home/user1/private-cloud-platform
-    control_api_directory: "{{ control_repository_root }}/control-plane/api"
+    # systemd API와 같은 /opt 릴리스 Python을 사용해야 MariaDB 환경·코드 버전이
+    # portal과 일치한다. Git 작업본의 옛 virtualenv를 직접 실행하지 않는다.
+    control_release_root: /opt/private-cloud/release
+    control_api_directory: "{{ control_release_root }}/control-plane/api"
     control_api_venv: "{{ control_api_directory }}/.venv"
     control_api_environment_file: /etc/private-cloud/api.env
     image_volume_root: /var/lib/private-cloud/volumes
@@ -68,7 +70,10 @@
     - name: 검증한 Ubuntu image를 control catalog에 등록
       ansible.builtin.shell: |
         set -euo pipefail
+        # api.env의 DB URL을 app.catalog Python subprocess까지 전달한다.
+        set -a
         source "{{ control_api_environment_file }}"
+        set +a
         export PRIVATE_CLOUD_CATALOG_IMAGE_ID="{{ ubuntu_image_id }}"
         export PRIVATE_CLOUD_CATALOG_DISPLAY_NAME="Ubuntu 24.04 LTS GenericCloud"
         export PRIVATE_CLOUD_CATALOG_OS_FAMILY=ubuntu

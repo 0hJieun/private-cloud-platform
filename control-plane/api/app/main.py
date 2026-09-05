@@ -301,7 +301,7 @@ def prometheus_instance_targets(request: Request, session: Session = Depends(get
     """Prometheus HTTP service discovery 전용 endpoint.
 
     사용자 session과 무관한 내부 endpoint이므로 Bearer token으로 보호한다. target은
-    ACTIVE이면서 모니터링을 선택한 VM만 포함하며, API가 DB 소유권과 lifecycle의
+    ACTIVE이고 기본 상태 점검이 적용된 VM만 포함하며, API가 DB 소유권과 lifecycle의
     단일 source of truth 역할을 한다.
     """
 
@@ -555,7 +555,9 @@ def request_instance(
         requested_vcpus=payload.vcpus,
         requested_memory_mb=payload.memory_mb,
         requested_disk_gb=payload.disk_gb,
-        monitoring_enabled=payload.monitoring_enabled,
+        # VM 기본 기능으로 exporter를 설치하고 Prometheus service discovery에 등록한다.
+        # 사용자가 API 요청으로 이 운영 기준을 해제할 수는 없다.
+        monitoring_enabled=True,
         status=InstanceStatus.REQUESTED,
     )
     session.add(instance)

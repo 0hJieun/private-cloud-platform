@@ -31,9 +31,9 @@
     # outer infrastructure용 private-cloud-ansible 키를 inner VM에 재사용하지 않는다.
     instance_automation_ssh_public_key_path: /home/user1/.ssh/private-cloud-instance-automation.pub
     instance_automation_ssh_public_key: ''
-    # guest agent는 테넌트가 명시적으로 선택한 경우에만 설치한다. control의 VM 생성·
-    # 삭제·DHCP 확인은 libvirt와 DHCP lease를 사용하므로 guest SSH 관리키가 필요 없다.
-    instance_monitoring_enabled: false
+    # 새 VM은 guest node exporter를 기본 설치한다. control의 VM 생성·삭제·DHCP 확인은
+    # 여전히 libvirt와 DHCP lease를 사용하며, exporter는 관찰 가능성만 추가한다.
+    instance_monitoring_enabled: true
     instance_monitoring_prometheus_address: 172.16.8.10
     instance_node_exporter_version: 1.12.1
     instance_node_exporter_archive: "node_exporter-{{ instance_node_exporter_version }}.linux-amd64.tar.gz"

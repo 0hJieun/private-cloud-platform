@@ -65,9 +65,9 @@ instance_events.operation_id   → operations.id
 worker는 `active_name = NULL`, `deleted_at = 현재 시각`, `status = DELETED`로 바꾼다. 따라서 같은
 사용자든 다른 사용자든 과거 이름은 보존하면서 새 VM에서 이름을 재사용할 수 있다.
 
-`instances.monitoring_enabled`는 guest OS node exporter를 설치하고 Prometheus target으로
-등록할지 결정하는 owner 선택값이다. 기본값은 `false`이며, 기존 VM을 동의 없이 monitoring
-대상으로 바꾸지 않는다. VM별 target은 별도 table에 중복 저장하지 않는다. provider IP와
+`instances.monitoring_enabled`는 guest OS node exporter 설치 여부를 기록한다. 현재 정책에서
+새 VM은 자동으로 `true`가 되며, 이전 정책에서 생성된 VM은 실제 설치 여부를 보존하기 위해
+값을 소급 변경하지 않는다. VM별 target은 별도 table에 중복 저장하지 않는다. provider IP와
 lifecycle의 source of truth가 이미 `instances`이므로, Prometheus HTTP service discovery가
 `ACTIVE + monitoring_enabled + provider_ip` 조건을 API에서 직접 읽는다.
 

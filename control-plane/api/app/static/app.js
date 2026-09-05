@@ -439,7 +439,7 @@ async function loadMonitoring(instance) {
   setText("#monitoring-network", `${formatRate(data.network_receive_bytes_per_second)} / ${formatRate(data.network_transmit_bytes_per_second)}`);
   setText("#monitoring-description", data.enabled
     ? `Prometheus가 ${data.provider_ip || "할당 대기"}의 exporter를 control에서만 수집합니다.`
-    : "이 VM은 생성할 때 관리형 모니터링을 선택하지 않았습니다.");
+    : "이 VM은 기본 상태 점검 정책을 적용하기 전에 생성되었습니다.");
   setText("#monitoring-sampled-at", data.sampled_at ? `마지막 exporter 표본: ${formatDate(data.sampled_at)}` : "첫 표본은 VM 기동과 Prometheus 발견 뒤 표시됩니다.");
 }
 
@@ -515,7 +515,6 @@ $("#instance-form").addEventListener("submit", async (event) => {
     await api("/v1/instances", { method: "POST", body: JSON.stringify({
       name: $("#instance-name").value, image_id: $("#instance-image").value, ssh_public_key_id: $("#instance-key").value,
       vcpus: Number($("#instance-vcpus").value), memory_mb: Number($("#instance-memory").value), disk_gb: Number($("#instance-disk").value),
-      monitoring_enabled: $("#instance-monitoring").checked,
     }) });
     event.target.reset(); state.preflight = null; renderPreflight(); message("VM 생성 작업을 큐에 등록했습니다. scheduler가 배치와 생성을 처리합니다.", "success"); await refresh(); showView("instances");
   } catch (error) { message(error.message, "error"); }

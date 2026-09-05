@@ -79,7 +79,7 @@ MariaDB의 operation·event 이력에 남는다. `DELETED` instance 행은 soft 
 control에서 15초마다 5개 target을 수집하고 7일간 TSDB에 보관한다. Grafana는 management IP의
 `:3000`에서만 제공하며, Git으로 관리하는 dashboard JSON을 Ansible이 provisioning 경로에 배포한다.
 
-Managed monitoring을 선택한 instance는 cloud-init으로 node exporter를 설치하고 control
-Prometheus만 9100/tcp로 접근할 수 있게 한다. 일반 member는 Grafana datasource를 직접 사용하지
+새 instance는 cloud-init으로 node exporter를 설치하고 control Prometheus만 9100/tcp로 접근할 수
+있게 한다. 일반 member는 Grafana datasource를 직접 사용하지
 않고, portal API가 owner 권한을 확인해 해당 VM의 지표만 반환한다. Alertmanager, GlusterFS 운영 범위와
 장애 판단 경계는 [운영과 관찰 가능성](operations.md)에 기록한다.

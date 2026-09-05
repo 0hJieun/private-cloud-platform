@@ -114,9 +114,9 @@ class Instance(Base):
     requested_vcpus: Mapped[int] = mapped_column(Integer, nullable=False)
     requested_memory_mb: Mapped[int] = mapped_column(Integer, nullable=False)
     requested_disk_gb: Mapped[int] = mapped_column(Integer, nullable=False)
-    # 테넌트 OS 내부 agent는 기본값으로 설치하지 않는다. 사용자가 관리형 모니터링을
-    # 명시적으로 선택한 instance만 Prometheus target으로 등록한다.
-    monitoring_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # 새 VM은 guest node exporter를 기본 설치해 platform 관측 대상에 자동 편입한다.
+    # 이전 정책에서 생성된 VM은 migration으로 값을 바꾸지 않아 실제 설치 여부를 보존한다.
+    monitoring_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # 새 VM은 control의 별도 automation public key를 함께 받아 Ansible runtime
     # inventory에 편입된다. 기존 VM은 해당 키가 없으므로 migration 기본값 false로
     # 남겨, 의도하지 않은 control SSH 접근을 만들지 않는다.

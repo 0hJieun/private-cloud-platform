@@ -61,7 +61,6 @@ class InstanceCreate(BaseModel):
     vcpus: int = Field(default=1, ge=1, le=2)
     memory_mb: int = Field(default=1024, ge=512, le=2048)
     disk_gb: int = Field(default=10, ge=10, le=100)
-    monitoring_enabled: bool = False
 
 
 class InstancePreflightRequest(BaseModel):

@@ -46,6 +46,10 @@ control·compute1·compute2 → /var/lib/private-cloud/volumes (FUSE client)
 VM별 qcow2 overlay는 이 공유 볼륨에 저장한다. GlusterFS는 파일/VM 디스크 스토리지이며, control의
 MariaDB application metadata를 복제하거나 HA로 만드는 도구는 아니다.
 
+클라이언트의 `/etc/fstab`은 `_netdev,nofail,x-systemd.automount`와 backup volfile server를 함께 사용한다.
+따라서 control·compute가 storage보다 먼저 부팅되어도 부팅 자체는 막지 않고, 해당 경로를 처음 접근할 때
+두 storage 주소로 다시 마운트를 시도한다.
+
 정상·복구 확인은 control에서 다음처럼 한다.
 
 ```bash

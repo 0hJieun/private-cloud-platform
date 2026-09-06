@@ -46,32 +46,6 @@ control·compute1·compute2 → /var/lib/private-cloud/volumes (FUSE client)
 VM별 qcow2 overlay는 이 공유 볼륨에 저장한다. GlusterFS는 파일/VM 디스크 스토리지이며, control의
 MariaDB application metadata를 복제하거나 HA로 만드는 도구는 아니다.
 
-클라이언트의 `/etc/fstab`은 `_netdev,nofail,x-systemd.automount`와 backup volfile server를 함께 사용한다.
-따라서 control·compute가 storage보다 먼저 부팅되어도 부팅 자체는 막지 않고, 해당 경로를 처음 접근할 때
-두 storage 주소로 다시 마운트를 시도한다.
-
-### 부팅 순서 역전 검증 (2026-09-06, KST)
-
-기존 VM 두 대를 정상 종료하고 worker를 일시 정지한 뒤, storage 두 대를 끈 상태에서
-compute1을 먼저 부팅했다. VM 자동 시작은 이 시험에서 잠시 해제했다.
-
-| 시각 | 시험 | 관찰 결과 |
-|---|---|---|
-| 11:40:26 | storage 없이 compute1 부팅 | multi-user target 도달, SSH 가능, automount 대기 |
-| 11:40:45–54 | 공유 `images` 경로 접근 | 9초 후 접근 실패, mount unit 실패, automount는 대기 유지 |
-| 11:41:57 | storage 두 대 복구 후 같은 경로 재접근 | 수동 mount·서비스 재시작 없이 FUSE 마운트와 파일 조회 성공 |
-| 복구 후 | 기존 VM·worker 재개 | vm01·vm02 SSH 접속, vm02 autostart 재설정, compute1 실패 unit 0개 |
-
-이는 계속 polling하는 방식이 아니라 **경로 재접근이 마운트를 다시 요청하는 방식**이다.
-스토리지가 없는 동안 파일 작업은 실패할 수 있고 mount 실패로 systemd가 degraded를 표시할 수 있다.
-실패한 VM 생성 요청이나 VM autostart를 자동 재실행한다는 뜻은 아니다.
-
-이 시험에서 automount 활성화 뒤 `findmnt` 결과에 `autofs`와 `fuse.glusterfs`가 함께 나오는 것도 확인했다.
-VM 생성·삭제와 이미지 준비의 공통 사전 검사는 경로 접근으로 자동 마운트를 요청한 뒤,
-정확한 mountpoint에서 `fuse.glusterfs`만 선택해 검증한다. 로컬 디렉터리나 autofs만 남은 상태는 통과시키지 않는다.
-수정한 playbook 5개의 문법 검사, 두 compute의 실제 공유 마운트 검사, 임시 automount 경로의
-첫 접근 시 마운트 성공, 일반 로컬 경로의 검사 실패까지 확인했다. 임시 마운트와 unit은 시험 후 제거했다.
-
 정상·복구 확인은 control에서 다음처럼 한다.
 
 ```bash
@@ -87,8 +61,7 @@ test를 전제로 하는 다음 단계로 둔다.
 
 ## 시연에서 정확히 말할 한계
 
-- compute outer VM을 다시 부팅하면 `libvirtd`와 OVS가 시작되고 autostart domain의 시작을 시도한다.
-  이때 공유 스토리지가 준비되지 않았다면 domain 시작은 실패할 수 있으며 별도 재시도가 필요하다.
+- compute outer VM을 다시 부팅하면 `libvirtd`, OVS, autostart domain이 같은 compute에서 복구된다.
 - 이는 compute1 장애 시 compute2로 자동 이동하는 migration/failover가 아니다.
 - 모든 outer VM이 같은 VMware Workstation host에 있으므로 물리 장애 도메인이 분리된 production HA가 아니다.
 - 향후 범위: Gluster arbiter/fencing, planned live migration, control-plane HA, multiple worker locking, TLS/CI.

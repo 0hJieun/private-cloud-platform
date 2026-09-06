@@ -111,9 +111,18 @@
         fail_msg: control automation 공개키 형식이 올바르지 않습니다.
 
     - name: 공유 GlusterFS 볼륨 마운트 확인
-      ansible.builtin.import_tasks: tasks/verify-gluster-mount.yml
-      vars:
-        gluster_check_mountpoint: "{{ instance_volume_root }}"
+      ansible.builtin.command:
+        argv:
+          - findmnt
+          - -n
+          - -o
+          - FSTYPE
+          - "{{ instance_volume_root }}"
+      register: instance_gluster_mount
+      changed_when: false
+      failed_when: >-
+        instance_gluster_mount.rc != 0 or
+        instance_gluster_mount.stdout | trim != 'fuse.glusterfs'
 
     - name: QEMU의 FUSE 접근 SELinux 정책 확인
       ansible.builtin.command:

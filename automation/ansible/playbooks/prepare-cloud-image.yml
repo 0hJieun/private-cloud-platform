@@ -12,18 +12,9 @@
 
   tasks:
     - name: 공유 이미지 라이브러리의 GlusterFS 마운트 확인
-      ansible.builtin.command:
-        argv:
-          - findmnt
-          - -n
-          - -o
-          - FSTYPE
-          - /var/lib/private-cloud/volumes
-      register: control_gluster_mount
-      changed_when: false
-      failed_when: >-
-        control_gluster_mount.rc != 0 or
-        control_gluster_mount.stdout | trim != 'fuse.glusterfs'
+      ansible.builtin.import_tasks: tasks/verify-gluster-mount.yml
+      vars:
+        gluster_check_mountpoint: /var/lib/private-cloud/volumes
 
     - name: qcow2 검증 도구 설치
       ansible.builtin.dnf:

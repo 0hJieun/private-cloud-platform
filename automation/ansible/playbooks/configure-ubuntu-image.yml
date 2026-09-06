@@ -22,18 +22,9 @@
 
   tasks:
     - name: GlusterFS 이미지 library 마운트 확인
-      ansible.builtin.command:
-        argv:
-          - findmnt
-          - -n
-          - -o
-          - FSTYPE
-          - "{{ image_volume_root }}"
-      register: ubuntu_image_gluster_mount
-      changed_when: false
-      failed_when: >-
-        ubuntu_image_gluster_mount.rc != 0 or
-        ubuntu_image_gluster_mount.stdout | trim != 'fuse.glusterfs'
+      ansible.builtin.import_tasks: tasks/verify-gluster-mount.yml
+      vars:
+        gluster_check_mountpoint: "{{ image_volume_root }}"
 
     - name: 이미지 library 경로 생성
       ansible.builtin.file:

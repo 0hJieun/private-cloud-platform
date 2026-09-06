@@ -78,14 +78,9 @@
       changed_when: true
 
     - name: GlusterFS 마운트 파일시스템 확인
-      ansible.builtin.command:
-        argv:
-          - findmnt
-          - -n
-          - -o
-          - FSTYPE,TARGET,SOURCE
-          - "{{ gluster_mountpoint }}"
-      changed_when: false
+      ansible.builtin.import_tasks: tasks/verify-gluster-mount.yml
+      vars:
+        gluster_check_mountpoint: "{{ gluster_mountpoint }}"
 
   handlers:
     - name: systemd daemon 설정 다시 읽기

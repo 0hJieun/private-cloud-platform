@@ -59,6 +59,28 @@ class WebTemplateTests(unittest.TestCase):
         self.assertEqual("discard", config["route"]["receiver"])
         self.assertEqual([{"name": "discard"}], config["receivers"])
 
+    def test_fast_alert_delivery_keeps_repeat_notifications_throttled(self):
+        self.variables["monitoring_slack_webhook_url"] = {"stdout": ""}
+        route = yaml.safe_load(self.render("monitoring/alertmanager/alertmanager.yml.j2"))["route"]
+        self.assertEqual("5s", route["group_wait"])
+        self.assertEqual("15s", route["group_interval"])
+        self.assertEqual("4h", route["repeat_interval"])
+
+    def test_scrape_timing_and_rule_hold_periods(self):
+        self.variables.update({
+            "groups": {"monitoring_nodes": []},
+            "monitoring_instance_discovery_token": {"stdout": "test-token"},
+        })
+        config = yaml.safe_load(self.render("monitoring/prometheus/prometheus.yml.j2"))
+        self.assertEqual("10s", config["global"]["scrape_interval"])
+        self.assertEqual("5s", config["global"]["scrape_timeout"])
+        self.assertEqual("10s", config["global"]["evaluation_interval"])
+        rules = yaml.safe_load((ROOT / "monitoring/prometheus/rules/private-cloud-alerts.yml").read_text(encoding="utf-8"))
+        holds = {rule["alert"]: rule["for"] for group in rules["groups"] for rule in group["rules"]}
+        for name in ("ComputeNodeDown", "StorageNodeDown", "ManagedInstanceExporterDown"):
+            self.assertEqual("30s", holds[name])
+        self.assertEqual("10m", holds["GlusterBrickCapacityHigh"])
+
 
 if __name__ == "__main__":
     unittest.main()

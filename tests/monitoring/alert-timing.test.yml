@@ -1,0 +1,38 @@
+rule_files:
+  - ../../monitoring/prometheus/rules/private-cloud-alerts.yml
+evaluation_interval: 10s
+tests:
+  - name: continuous failure fires after 30 seconds and clears on recovery
+    interval: 10s
+    input_series:
+      - series: 'up{job="node",role="compute",node="compute2"}'
+        values: '1 0 0 0 0 0 1 1'
+      - series: 'up{job="node",role="storage",node="storage2"}'
+        values: '1 0 0 0 0 0 1 1'
+      - series: 'up{job="instance",cloud_instance_name="vm01"}'
+        values: '1 0 0 0 0 0 1 1'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertstate="firing"})'
+        eval_time: 30s
+        exp_samples: []
+      - expr: 'count(ALERTS{alertstate="firing"})'
+        eval_time: 40s
+        exp_samples:
+          - labels: '{}'
+            value: 3
+      - expr: 'count(ALERTS{alertstate="firing"})'
+        eval_time: 60s
+        exp_samples: []
+  - name: transient failure recovers before hold period without firing
+    interval: 10s
+    input_series:
+      - series: 'up{job="node",role="compute",node="compute2"}'
+        values: '1 0 0 1 1 1'
+      - series: 'up{job="node",role="storage",node="storage2"}'
+        values: '1 0 0 1 1 1'
+      - series: 'up{job="instance",cloud_instance_name="vm01"}'
+        values: '1 0 0 1 1 1'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertstate="firing"})'
+        eval_time: 40s
+        exp_samples: []

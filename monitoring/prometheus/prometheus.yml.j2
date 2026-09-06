@@ -1,6 +1,8 @@
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  # 소규모 실습의 장애 시연: 10초마다 수집·판정하고, 느린 응답은 5초까지만 기다린다.
+  scrape_interval: 10s
+  scrape_timeout: 5s
+  evaluation_interval: 10s
 
 # Prometheus는 규칙을 평가만 한다. deduplication·silence·Slack 같은 알림 전달은
 # loopback Alertmanager가 담당한다.

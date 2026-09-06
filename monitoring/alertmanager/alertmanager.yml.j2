@@ -6,10 +6,10 @@ route:
   # secret을 등록하고 playbook을 재실행하면 receiver가 Slack으로 자동 전환된다.
   receiver: "{{ 'slack-private-cloud' if (monitoring_slack_webhook_url.stdout | trim | length > 0) else 'discard' }}"
   group_by: [alertname, scope, node, cloud_instance_name]
-  group_wait: 15s
+  group_wait: 5s
   # 최초 장애는 `for` 조건을 통과한 뒤 group_wait만큼 모아 전달한다.
-  # 복구/상태 변경까지 5분씩 지연되면 소규모 운영 화면과 맞지 않으므로 1분으로 둔다.
-  group_interval: 1m
+  # 기존 그룹의 복구/상태 변경도 빠르게 전달한다. 동일 장애 반복은 아래 4시간을 유지한다.
+  group_interval: 15s
   repeat_interval: 4h
 
 receivers:

@@ -2,22 +2,22 @@ groups:
   - name: private-cloud.infrastructure
     rules:
       # compute 장애는 해당 hypervisor에서 동작하던 VM까지 영향을 받으므로 critical로
-      # 분류한다. 짧은 exporter 재시작을 제외하려고 1분 지속 뒤 firing한다.
+      # 분류한다. 순간적인 연결 실패를 제외하려고 30초 지속 뒤 firing한다.
       - alert: ComputeNodeDown
         expr: up{job="node",role="compute"} == 0
-        for: 1m
+        for: 30s
         labels:
           severity: critical
           scope: infrastructure
         annotations:
           summary: "Compute node {{ $labels.node }} is unreachable"
-          description: "Prometheus가 {{ $labels.node }} node exporter에 1분 이상 연결하지 못했습니다. 해당 hypervisor의 VM 상태를 확인하세요."
+          description: "Prometheus의 {{ $labels.node }} node exporter 수집 실패 상태가 30초 이상 지속됐습니다. 해당 hypervisor의 VM 상태를 확인하세요."
 
       # replica 2는 한 storage 장애에도 사본 하나가 남지만, redundancy가 사라진
       # degraded 상태다. 즉시 paging보다 warning으로 알리고 복구·heal을 유도한다.
       - alert: StorageNodeDown
         expr: up{job="node",role="storage"} == 0
-        for: 1m
+        for: 30s
         labels:
           severity: warning
           scope: storage
@@ -27,7 +27,7 @@ groups:
 
       - alert: ManagedInstanceExporterDown
         expr: up{job="instance"} == 0
-        for: 2m
+        for: 30s
         labels:
           severity: warning
           scope: guest

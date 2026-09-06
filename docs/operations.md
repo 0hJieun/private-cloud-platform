@@ -54,10 +54,17 @@ grouping·해결 알림·Slack 전송을 담당한다. Webhook URL은 Git, syste
 
 | Alert | 조건 | 운영 의미 |
 |---|---|---|
-| `ComputeNodeDown` | compute exporter가 1분 이상 down | hypervisor와 해당 guest 영향 확인 |
-| `StorageNodeDown` | storage exporter가 1분 이상 down | GlusterFS replica degraded 가능성 |
-| `ManagedInstanceExporterDown` | opt-in guest exporter가 2분 이상 down | guest metrics endpoint 점검 |
+| `ComputeNodeDown` | compute exporter 수집 실패가 30초 지속 | hypervisor와 해당 guest 영향 확인 |
+| `StorageNodeDown` | storage exporter 수집 실패가 30초 지속 | GlusterFS replica degraded 가능성 |
+| `ManagedInstanceExporterDown` | 수집 대상 guest exporter 실패가 30초 지속 | guest metrics endpoint 점검 |
 | `GlusterBrickCapacityHigh` | brick 사용률 85% 초과가 10분 지속 | image·overlay 디스크 용량 증설 판단 |
+
+실습용 빠른 알림: 수집·규칙 평가는 10초 주기, 수집 timeout은 5초다. 최초 전송 대기는
+5초(`group_wait`), 기존 그룹의 변경·복구 확인 주기는 15초(`group_interval`)다.
+첫 장애 알림은 대략 40~60초, exporter 응답 복구 후 복구 알림은 대략 10~30초를 예상한다.
+이는 네트워크·Slack 지연과 재시도를 제외한 예상이며 보장 시간이 아니다. VM 부팅 시간도 별도다.
+동일 장애가 계속되면 4시간 간격으로 반복한다. 짧은 순간 끊김은 30초 지속 조건으로 거른다.
+규칙 테스트: `promtool test rules tests/monitoring/alert-timing.test.yml` (저장소 루트에서 실행).
 
 `ManagedInstanceExporterDown`은 VM domain이 반드시 꺼졌다는 뜻이 아니라 exporter·네트워크·firewall을
 포함한 관측 경로가 끊겼다는 신호다. domain lifecycle까지 엄밀하게 판단하려면 libvirt exporter 또는

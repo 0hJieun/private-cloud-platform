@@ -26,11 +26,18 @@ control의 `dhcpd`는 provider NIC(`ens192`)에서만 동작하며 `172.16.8.151
 
 ```text
 browser
-  └── http://172.16.2.10:8080 (Nginx)
-        └── FastAPI :8000 (localhost only)
-              ├── MariaDB: users / instances / operations / events
-              └── worker: scheduler → Ansible → libvirt/KVM
+  └── Nginx 172.16.8.10:443 (HTTPS)
+        ├── cloud.lab.test → FastAPI 127.0.0.1:8000
+        │     ├── MariaDB: users / instances / operations / events
+        │     └── worker: scheduler → Ansible → libvirt/KVM
+        └── grafana.lab.test → Grafana 127.0.0.1:3000 (운영자 로그인)
 ```
+
+웹 주소·TLS 경로는 `automation/ansible/inventory/group_vars/control_nodes.yml`에서 관리한다.
+Nginx가 TLS를 종료하며, API는 loopback 프록시 헤더만 신뢰하고 세션 쿠키에 Secure를 적용한다.
+Grafana는 익명 접근·공개 회원가입을 허용하지 않는다. 포털 admin과 Grafana 로그인을 통합한 SSO는 아니다.
+두 웹 이름은 실습 PC의 hosts로 해석하며, 실습 CA 공개 인증서를 해당 PC에 신뢰 등록한다.
+VMnet8에는 instance·storage도 있으므로 이 설계는 별도 사용자망/스토리지망을 갖춘 production 분리를 주장하지 않는다.
 
 `POST /v1/instances`는 실제 VM 생성을 기다리지 않고 `202 Accepted`와 함께 MariaDB에
 `CREATE/PENDING` operation을 남긴다. 독립 worker가 작업을 가져가 현재 libvirt 예약량을

@@ -23,7 +23,7 @@ control ── DHCP / monitoring / control plane
   └── storage1, storage2 ── GlusterFS replica 2
 ```
 
-Provider network는 `172.16.8.0/24`, management network는 `172.16.2.0/24`로 분리한다. FastAPI와 Prometheus/Alertmanager는 control의 loopback에만 열고, Nginx와 Grafana만 management network에서 제공한다.
+Provider network는 `172.16.8.0/24`, management network는 `172.16.2.0/24`다. 웹 입구는 Nginx의 `172.16.8.10:443` 하나로 제공한다. 포털은 `https://cloud.lab.test`, 운영자 Grafana는 `https://grafana.lab.test`로 접속하며 FastAPI·Grafana·Prometheus/Alertmanager는 control의 loopback에서 동작한다. 현재 웹 접근은 VMware 호스트 PC에만 허용하며 실제 LAN 공개나 인터넷 서비스는 아니다.
 
 ## Repository layout
 

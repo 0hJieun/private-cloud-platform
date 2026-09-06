@@ -13,6 +13,7 @@ from urllib.request import urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -62,7 +63,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=get_settings().session_secret,
     same_site="lax",
-    https_only=False,  # 현재 lab은 HTTP. Nginx HTTPS 배포 단계에서 true로 바꾼다.
+    https_only=get_settings().session_https_only,
 )
 
 
@@ -355,6 +356,12 @@ def me(user: User = Depends(require_user)) -> UserRead:
 @app.get("/v1/users", response_model=list[UserRead], tags=["users"])
 def list_users(_: User = Depends(require_admin), session: Session = Depends(get_session)) -> list[UserRead]:
     return [user_read(item) for item in session.scalars(select(User).order_by(User.username))]
+
+
+@app.get("/grafana", include_in_schema=False)
+def open_grafana(_: User = Depends(require_admin)) -> RedirectResponse:
+    # 포털 세션을 Grafana에 전달하지 않는다. Grafana에서도 운영자 로그인이 필요하다.
+    return RedirectResponse(f"{get_settings().grafana_url}/d/private-cloud-instances", status_code=302)
 
 
 @app.post("/v1/users", response_model=UserRead, status_code=status.HTTP_201_CREATED, tags=["users"])

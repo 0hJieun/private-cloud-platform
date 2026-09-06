@@ -1,0 +1,32 @@
+---
+- name: 기존 management 웹 포트 영구 허용 조회
+  ansible.builtin.command:
+    argv: [firewall-cmd, --zone=public, --permanent, '--query-port={{ item }}/tcp']
+  loop: [8080, 3000]
+  register: legacy_web_permanent
+  changed_when: false
+  failed_when: legacy_web_permanent.rc not in [0, 1]
+
+- name: 기존 management 웹 포트 영구 허용 제거
+  ansible.builtin.command:
+    argv: [firewall-cmd, --zone=public, --permanent, '--remove-port={{ item.item }}/tcp']
+  loop: '{{ legacy_web_permanent.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: item.rc == 0
+
+- name: 기존 management 웹 포트 runtime 허용 조회
+  ansible.builtin.command:
+    argv: [firewall-cmd, --zone=public, '--query-port={{ item }}/tcp']
+  loop: [8080, 3000]
+  register: legacy_web_runtime
+  changed_when: false
+  failed_when: legacy_web_runtime.rc not in [0, 1]
+
+- name: 기존 management 웹 포트 runtime 허용 제거
+  ansible.builtin.command:
+    argv: [firewall-cmd, --zone=public, '--remove-port={{ item.item }}/tcp']
+  loop: '{{ legacy_web_runtime.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: item.rc == 0

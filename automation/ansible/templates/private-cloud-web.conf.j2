@@ -1,0 +1,41 @@
+# Ansible managed: TLS 종료는 Nginx, backend HTTP는 같은 서버의 loopback만 사용한다.
+map $http_upgrade $private_cloud_connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen {{ web_listen_address }}:443 ssl default_server;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_reject_handshake on;
+    server_name _;
+    return 444;
+}
+
+{% for site in [{'hostname': web_portal_hostname, 'port': 8000}, {'hostname': web_grafana_hostname, 'port': 3000}] %}
+server {
+    listen {{ web_listen_address }}:443 ssl;
+    server_name {{ site.hostname }};
+    ssl_certificate {{ web_certificate_directory }}/server.crt;
+    ssl_certificate_key {{ web_certificate_directory }}/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:PrivateCloudTLS:10m;
+    ssl_session_timeout 1h;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ site.port }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # 유일한 edge proxy이므로 클라이언트가 보낸 forwarded header를 신뢰하지 않는다.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $private_cloud_connection_upgrade;
+    }
+}
+{% endfor %}

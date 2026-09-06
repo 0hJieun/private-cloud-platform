@@ -574,16 +574,24 @@
         content: |
           [Service]
           EnvironmentFile={{ monitoring_grafana_environment_file }}
+          Environment=GF_AUTH_ANONYMOUS_ENABLED=false
+          Environment=GF_AUTH_PROXY_ENABLED=false
+          Environment=GF_USERS_ALLOW_ORG_CREATE=false
+          Environment=GF_SECURITY_COOKIE_SECURE=true
+          Environment=GF_SECURITY_COOKIE_SAMESITE=lax
 
-    - name: Grafana가 management IP에서만 listen하도록 설정
+    - name: Grafana를 Nginx 뒤의 loopback으로 제한하고 HTTPS 주소 설정
       ansible.builtin.lineinfile:
         path: /etc/grafana/grafana.ini
         regexp: "^;?{{ item.key }} ="
         line: "{{ item.key }} = {{ item.value }}"
         insertafter: '^\[server\]$'
       loop:
-        - { key: 'http_addr', value: '172.16.2.10' }
+        - { key: 'http_addr', value: '127.0.0.1' }
         - { key: 'http_port', value: '3000' }
+        - { key: 'protocol', value: 'http' }
+        - { key: 'domain', value: '{{ web_grafana_hostname }}' }
+        - { key: 'root_url', value: '{{ web_grafana_url }}/' }
 
     - name: Grafana public sign up 비활성화
       ansible.builtin.lineinfile:
@@ -645,37 +653,22 @@
         state: restarted
         enabled: true
 
-    - name: firewalld에서 Grafana port 영구 허용 여부 확인
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --permanent
-          - --query-port=3000/tcp
-      register: grafana_firewall_port
-      changed_when: false
-      failed_when: false
-
-    - name: firewalld에서 Grafana management port 허용
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --permanent
-          - --add-port=3000/tcp
-      when: grafana_firewall_port.rc != 0
-
-    - name: Grafana port runtime 적용
-      ansible.builtin.command:
-        argv:
-          - firewall-cmd
-          - --add-port=3000/tcp
-      when: grafana_firewall_port.rc != 0
+    - name: 직접 접속용 management 웹 포트 허용 제거
+      ansible.builtin.import_tasks: tasks/close-legacy-web-ports.yml
 
     - name: Grafana health endpoint 확인
       ansible.builtin.uri:
-        url: http://172.16.2.10:3000/api/health
+        url: http://127.0.0.1:3000/api/health
         status_code: 200
       register: grafana_health
       changed_when: false
       retries: 20
       delay: 3
       until: grafana_health.status == 200
+
+    - name: Nginx HTTPS를 경유한 Grafana 확인
+      ansible.builtin.uri:
+        url: '{{ web_grafana_url }}/api/health'
+        ca_path: /etc/pki/ca-trust/source/anchors/private-cloud-lab.crt
+        status_code: 200
+      changed_when: false

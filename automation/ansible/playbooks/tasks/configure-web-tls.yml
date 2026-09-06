@@ -1,0 +1,165 @@
+---
+# 실습용 CA: 개인키는 root 전용으로 control에만 보관한다.
+# 서버 인증서는 만료 30일 전부터 이 playbook을 재실행하면 갱신된다.
+- name: TLS 도구 설치
+  ansible.builtin.dnf:
+    name: openssl
+    state: present
+
+- name: CA와 웹 인증서 경로 생성
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ web_pki_directory }}"
+    - "{{ web_certificate_directory }}"
+
+- name: 실습 CA 개인키 생성
+  ansible.builtin.command:
+    argv: [openssl, genrsa, -out, "{{ web_pki_directory }}/root-ca.key", '3072']
+    creates: "{{ web_pki_directory }}/root-ca.key"
+  no_log: true
+
+- name: 실습 CA 공개 인증서 생성
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -new
+      - -sha256
+      - -days
+      - '1825'
+      - -key
+      - "{{ web_pki_directory }}/root-ca.key"
+      - -subj
+      - /O=Private Cloud Lab/CN=Private Cloud Lab Root CA
+      - -addext
+      - basicConstraints=critical,CA:TRUE,pathlen:0
+      - -addext
+      - keyUsage=critical,keyCertSign,cRLSign
+      - -addext
+      - nameConstraints=critical,permitted;DNS:.lab.test
+      - -out
+      - "{{ web_pki_directory }}/root-ca.crt"
+    creates: "{{ web_pki_directory }}/root-ca.crt"
+
+- name: CA 유효기간 확인
+  ansible.builtin.command:
+    argv: [openssl, x509, -checkend, '2592000', -noout, -in, "{{ web_pki_directory }}/root-ca.crt"]
+  changed_when: false
+
+- name: Nginx 서버 개인키 생성
+  ansible.builtin.command:
+    argv: [openssl, genrsa, -out, "{{ web_certificate_directory }}/server.key", '3072']
+    creates: "{{ web_certificate_directory }}/server.key"
+  no_log: true
+
+- name: TLS 개인키 권한 제한
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - "{{ web_pki_directory }}/root-ca.key"
+    - "{{ web_certificate_directory }}/server.key"
+
+- name: 웹 서버 인증서 요청 설정
+  ansible.builtin.copy:
+    dest: "{{ web_certificate_directory }}/request.cnf"
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      [req]
+      prompt = no
+      distinguished_name = dn
+      req_extensions = server_ext
+      [dn]
+      O = Private Cloud Lab
+      CN = {{ web_portal_hostname }}
+      [server_ext]
+      basicConstraints = critical,CA:FALSE
+      keyUsage = critical,digitalSignature,keyEncipherment
+      extendedKeyUsage = serverAuth
+      subjectAltName = DNS:{{ web_portal_hostname }},DNS:{{ web_grafana_hostname }}
+  register: web_certificate_request
+
+- name: 서버 인증서 갱신 필요 여부 확인
+  ansible.builtin.command:
+    argv: [openssl, x509, -checkend, '2592000', -noout, -in, "{{ web_certificate_directory }}/server.crt"]
+  register: web_certificate_expiry
+  changed_when: false
+  failed_when: web_certificate_expiry.rc not in [0, 1]
+
+- name: 웹 서버 인증서 서명 요청 생성
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -new
+      - -key
+      - "{{ web_certificate_directory }}/server.key"
+      - -config
+      - "{{ web_certificate_directory }}/request.cnf"
+      - -out
+      - "{{ web_certificate_directory }}/server.csr"
+  when: web_certificate_request.changed or web_certificate_expiry.rc != 0
+
+- name: 실습 CA로 웹 서버 인증서 발급
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -req
+      - -sha256
+      - -days
+      - '365'
+      - -in
+      - "{{ web_certificate_directory }}/server.csr"
+      - -CA
+      - "{{ web_pki_directory }}/root-ca.crt"
+      - -CAkey
+      - "{{ web_pki_directory }}/root-ca.key"
+      - -CAcreateserial
+      - -extfile
+      - "{{ web_certificate_directory }}/request.cnf"
+      - -extensions
+      - server_ext
+      - -out
+      - "{{ web_certificate_directory }}/server.crt"
+  when: web_certificate_request.changed or web_certificate_expiry.rc != 0
+
+- name: 서버 인증서 서명 검증
+  ansible.builtin.command:
+    argv: [openssl, verify, -CAfile, "{{ web_pki_directory }}/root-ca.crt", "{{ web_certificate_directory }}/server.crt"]
+  changed_when: false
+
+- name: control과 Windows에서 사용할 CA 공개 인증서 배포
+  ansible.builtin.copy:
+    src: "{{ web_pki_directory }}/root-ca.crt"
+    dest: /etc/pki/ca-trust/source/anchors/private-cloud-lab.crt
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+  register: web_ca_trust
+
+- name: control의 인증서 신뢰 저장소 갱신
+  ansible.builtin.command: update-ca-trust
+  when: web_ca_trust.changed
+
+- name: control에서 웹 이름을 해석할 hosts 등록
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: '# {mark} PRIVATE CLOUD WEB'
+    block: "{{ web_listen_address }} {{ web_portal_hostname }} {{ web_grafana_hostname }}"
+
+- name: TLS 파일 SELinux 기본 문맥 복구
+  ansible.builtin.command:
+    argv: [restorecon, -RF, "{{ web_certificate_directory }}"]
+  changed_when: false

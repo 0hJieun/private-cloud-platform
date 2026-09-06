@@ -1,0 +1,11 @@
+# 브라우저 접속 주소의 단일 설정 지점. SSH/스토리지 주소는 변경하지 않는다.
+web_listen_address: 172.16.8.10
+web_portal_hostname: cloud.lab.test
+web_grafana_hostname: grafana.lab.test
+web_portal_url: "https://{{ web_portal_hostname }}"
+web_grafana_url: "https://{{ web_grafana_hostname }}"
+web_firewall_zone: pc-provider
+# 현재는 VMware를 실행하는 Windows PC만 허용한다. LAN 포트 전달은 별도 작업이다.
+web_client_address: 172.16.8.1/32
+web_pki_directory: /etc/private-cloud/pki
+web_certificate_directory: /etc/pki/nginx/private-cloud

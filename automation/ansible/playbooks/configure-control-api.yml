@@ -30,8 +30,6 @@
     control_api_database_user: privatecloud
     control_api_service_name: private-cloud-api
     control_worker_service_name: private-cloud-worker
-    control_portal_listen_address: 172.16.2.10
-    control_portal_port: 8080
 
   tasks:
     - name: API 소스 코드 존재 여부 확인
@@ -299,6 +297,18 @@
         mode: '0600'
       when: control_api_environment.stat.exists
 
+    - name: API의 HTTPS 쿠키와 운영자 Grafana 주소 설정
+      ansible.builtin.lineinfile:
+        path: "{{ control_api_environment_file }}"
+        regexp: '^{{ item.key }}='
+        line: '{{ item.key }}={{ item.value }}'
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - { key: PRIVATE_CLOUD_SESSION_HTTPS_ONLY, value: 'true' }
+        - { key: PRIVATE_CLOUD_GRAFANA_URL, value: '{{ web_grafana_url }}' }
+
     # root은 MariaDB unix socket 인증으로만 사용한다. 앱은 아래 전용 DB 계정으로 접속한다.
     - name: API 전용 database와 최소 권한 사용자 구성
       ansible.builtin.shell: |
@@ -497,7 +507,7 @@
           Group=user1
           WorkingDirectory={{ control_api_directory }}
           EnvironmentFile={{ control_api_environment_file }}
-          ExecStart={{ control_api_venv }}/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+          ExecStart={{ control_api_venv }}/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
           Restart=on-failure
           RestartSec=3
 
@@ -549,28 +559,26 @@
         state: restarted
         enabled: true
 
-    # Portal은 API와 같은 origin으로 reverse proxy한다. 지금은 내부 lab HTTP만 쓰고,
-    # 외부 공개 단계에서 TLS termination과 https_only cookie를 별도 적용한다.
-    - name: private-cloud portal Nginx reverse proxy 설정
-      ansible.builtin.copy:
+    - name: 웹 TLS 인증서와 control의 이름 해석 준비
+      ansible.builtin.import_tasks: tasks/configure-web-tls.yml
+
+    - name: private-cloud HTTPS Nginx reverse proxy 설정
+      ansible.builtin.template:
+        src: ../templates/private-cloud-web.conf.j2
         dest: /etc/nginx/conf.d/private-cloud.conf
         owner: root
         group: root
         mode: '0644'
-        content: |
-          server {
-              listen {{ control_portal_listen_address }}:{{ control_portal_port }};
-              server_name _;
+        backup: true
 
-              location / {
-                  proxy_pass http://127.0.0.1:8000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-              }
-          }
+    - name: Nginx 기본 HTTP welcome 서버 대신 명시적인 웹 입구만 사용
+      ansible.builtin.template:
+        src: ../templates/nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
 
     - name: Nginx 설정 검증
       ansible.builtin.command:
@@ -604,30 +612,43 @@
         state: restarted
         enabled: true
 
-    - name: firewalld에서 portal port 영구 허용 여부 확인
+    - name: 실습 PC의 HTTPS 영구 접근 규칙 존재 여부 확인
       ansible.builtin.command:
         argv:
           - firewall-cmd
           - --permanent
-          - --query-port={{ control_portal_port }}/tcp
-      register: control_portal_firewall_port
+          - --zone={{ web_firewall_zone }}
+          - '--query-rich-rule=rule family="ipv4" source address="{{ web_client_address }}" service name="https" accept'
+      register: control_web_firewall_rule
       changed_when: false
-      failed_when: false
+      failed_when: control_web_firewall_rule.rc not in [0, 1]
 
-    - name: firewalld에서 portal management port 허용
+    - name: 실습 PC의 HTTPS 접근 영구 허용
       ansible.builtin.command:
         argv:
           - firewall-cmd
           - --permanent
-          - --add-port={{ control_portal_port }}/tcp
-      when: control_portal_firewall_port.rc != 0
+          - --zone={{ web_firewall_zone }}
+          - '--add-rich-rule=rule family="ipv4" source address="{{ web_client_address }}" service name="https" accept'
+      when: control_web_firewall_rule.rc == 1
 
-    - name: portal port runtime 적용
+    - name: 실습 PC의 HTTPS runtime 규칙 조회
       ansible.builtin.command:
         argv:
           - firewall-cmd
-          - --add-port={{ control_portal_port }}/tcp
-      when: control_portal_firewall_port.rc != 0
+          - --zone={{ web_firewall_zone }}
+          - '--query-rich-rule=rule family="ipv4" source address="{{ web_client_address }}" service name="https" accept'
+      register: control_web_runtime_rule
+      changed_when: false
+      failed_when: control_web_runtime_rule.rc not in [0, 1]
+
+    - name: 실습 PC의 HTTPS runtime 접근 허용
+      ansible.builtin.command:
+        argv:
+          - firewall-cmd
+          - --zone={{ web_firewall_zone }}
+          - '--add-rich-rule=rule family="ipv4" source address="{{ web_client_address }}" service name="https" accept'
+      when: control_web_runtime_rule.rc == 1
 
     - name: API health endpoint 확인
       ansible.builtin.uri:
@@ -642,7 +663,8 @@
 
     - name: Nginx를 경유한 portal 확인
       ansible.builtin.uri:
-        url: "http://{{ control_portal_listen_address }}:{{ control_portal_port }}/"
+        url: "{{ web_portal_url }}/"
+        ca_path: /etc/pki/ca-trust/source/anchors/private-cloud-lab.crt
         status_code: 200
         return_content: true
       register: control_portal_health
@@ -650,3 +672,6 @@
       retries: 10
       delay: 2
       until: "'PRIVATE CLOUD CONTROL' in control_portal_health.content"
+
+    - name: HTTPS 확인 후 기존 management 웹 포트 허용 제거
+      ansible.builtin.import_tasks: tasks/close-legacy-web-ports.yml

@@ -14,6 +14,8 @@ class Settings:
     session_secret: str
     prometheus_url: str
     monitoring_discovery_token: str
+    session_https_only: bool
+    grafana_url: str
 
 
 @lru_cache
@@ -33,4 +35,6 @@ def get_settings() -> Settings:
         # HTTP service discovery endpoint는 Prometheus process만 호출한다. 빈 기본값은
         # 개발 환경에서 해당 endpoint를 의도적으로 사용할 수 없게 하는 fail-closed 값이다.
         monitoring_discovery_token=os.environ.get("PRIVATE_CLOUD_MONITORING_DISCOVERY_TOKEN", ""),
+        session_https_only=os.environ.get("PRIVATE_CLOUD_SESSION_HTTPS_ONLY", "false").lower() == "true",
+        grafana_url=os.environ.get("PRIVATE_CLOUD_GRAFANA_URL", "https://grafana.lab.test").rstrip("/"),
     )

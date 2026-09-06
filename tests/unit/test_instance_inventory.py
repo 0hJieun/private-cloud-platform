@@ -45,7 +45,7 @@ class RuntimeInventoryTests(unittest.TestCase):
         hostvars = payload["_meta"]["hostvars"]["web01"]
         self.assertEqual("172.16.8.155", hostvars["ansible_host"])
         self.assertEqual("clouduser", hostvars["ansible_user"])
-        self.assertEqual("/tmp/private-cloud-instance-automation", hostvars["ansible_ssh_private_key_file"])
+        self.assertEqual(str(Path("/tmp/private-cloud-instance-automation")), hostvars["ansible_ssh_private_key_file"])
         self.assertTrue(hostvars["ansible_become"])
         self.assertIn("StrictHostKeyChecking=accept-new", hostvars["ansible_ssh_common_args"])
 
@@ -63,7 +63,7 @@ class RuntimeInventoryTests(unittest.TestCase):
         self.assertIn("Host web01", config)
         self.assertIn("HostName 172.16.8.155", config)
         self.assertIn("User clouduser", config)
-        self.assertIn("IdentityFile /tmp/private-cloud-instance-automation", config)
+        self.assertIn(f"IdentityFile {Path('/tmp/private-cloud-instance-automation')}", config)
         self.assertIn("StrictHostKeyChecking accept-new", config)
 
 

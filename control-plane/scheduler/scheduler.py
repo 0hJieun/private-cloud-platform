@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""로컬 VMware 실습용 최소 인스턴스 scheduler.
+"""작업 처리기와 진단 CLI가 공유하는 compute 자원 조회·배치 로직.
 
-control에서 실행한다. Ansible inventory로 compute 노드를 찾고 SSH로 libvirt의
-정의된 domain 자원량을 읽는다. 가장 덜 할당된 노드를 선택한 뒤, 기존 Ansible
-프로비저너를 호출한다. API/DB가 생기기 전의 운영 도구이며, 장기 상태 저장소를
-대체하지는 않는다.
+Ansible 인벤토리에서 compute를 찾고 SSH로 실제 libvirt 예약량과 호스트 자원을
+확인한다. 웹 요청은 worker가 이 모듈을 호출하고 DB 작업·이력을 관리한다.
+직접 실행하는 CLI는 DB를 거치지 않는 진단용 경로이므로, 포털이 관리하는 VM의
+생성·삭제에는 포털/API를 사용한다.
 """
 
 from __future__ import annotations

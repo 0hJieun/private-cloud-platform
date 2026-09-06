@@ -1,4 +1,4 @@
-"""로그인 password hash와 SSH 공개키 fingerprint 처리."""
+"""로그인 비밀번호 해시와 SSH 공개키 지문 처리."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def verify_password(password: str, encoded_password: str) -> bool:
 
 
 def ssh_fingerprint(public_key: str) -> str:
-    """OpenSSH의 SHA256 fingerprint 형식으로 공개키를 식별한다."""
+    """OpenSSH의 SHA256 지문 형식으로 공개키를 식별한다."""
 
     parts = public_key.strip().split()
     if len(parts) < 2 or not parts[0].startswith("ssh-"):

@@ -2,7 +2,7 @@ rule_files:
   - ../../monitoring/prometheus/rules/private-cloud-alerts.yml
 evaluation_interval: 10s
 tests:
-  - name: continuous failure fires after 30 seconds and clears on recovery
+  - name: 연속 수집 실패가 30초 지속되면 알리고 복구 시 해제
     interval: 10s
     input_series:
       - series: 'up{job="node",role="compute",node="compute2"}'
@@ -23,7 +23,7 @@ tests:
       - expr: 'count(ALERTS{alertstate="firing"})'
         eval_time: 60s
         exp_samples: []
-  - name: transient failure recovers before hold period without firing
+  - name: 지속 조건 이전에 복구된 일시적 실패는 알리지 않음
     interval: 10s
     input_series:
       - series: 'up{job="node",role="compute",node="compute2"}'

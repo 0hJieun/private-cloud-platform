@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""control 노드 운영자가 사용하는 최소 private-cloud CLI."""
+"""DB 작업 경로를 우회하는 기반 가상화 진단 CLI.
+
+plan/list는 compute 자원과 VM을 조회한다. create/delete는 Ansible을 직접 실행해
+포털 DB와 불일치할 수 있으므로, 플랫폼 VM의 일반 운영에는 포털/API를 사용한다.
+"""
 
 from __future__ import annotations
 
@@ -95,7 +99,7 @@ def delete_instance(args: argparse.Namespace, private_key: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="cloudctl", description="private-cloud control CLI")
+    parser = argparse.ArgumentParser(prog="cloudctl", description="프라이빗 클라우드 기반 가상화 진단 CLI (DB 작업 경로 우회)")
     parser.add_argument(
         "--private-key",
         type=Path,

@@ -1,4 +1,4 @@
-# Secrets
+# 비밀값과 인증 파일
 .env
 .env.*
 !.env.example
@@ -7,7 +7,7 @@
 *.p12
 vault-password*
 
-# Python
+# Python 실행·검사 캐시
 __pycache__/
 *.py[cod]
 .venv/
@@ -16,12 +16,12 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
-# Frontend
+# 프런트엔드 의존성과 빌드 산출물
 node_modules/
 dist/
 build/
 
-# Virtual machines and images
+# 가상머신과 이미지 파일
 packer_cache/
 output-*/
 *.vmx
@@ -40,12 +40,12 @@ output-*/
 *.vmss
 *.nvram
 
-# Terraform state, if introduced later
+# 로컬 인프라 도구의 상태 파일
 .terraform/
 *.tfstate
 *.tfstate.*
 
-# Runtime data
+# 실행 중 생성되는 데이터
 data/
 logs/
 prometheus-data/
@@ -53,13 +53,13 @@ grafana-data/
 *.sqlite3
 *.db
 
-# Generated inventory and temporary files
+# 자동 생성 인벤토리와 임시 파일
 inventory/generated/
 tmp/
 *.retry
 *.log
 
-# Editors and operating systems
+# 편집기와 운영체제 파일
 .idea/
 .vscode/
 .DS_Store

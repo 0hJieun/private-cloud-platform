@@ -1,13 +1,13 @@
 # VMware 외부 VM 실험 환경 설계도
 #
-# 이 파일에는 VM 설정값만 기록한다.
+# 노드 사양 명세다. 생성 스크립트가 자동으로 읽는 입력 파일은 아니다.
 # ISO, VMDK, QCOW2 같은 실제 이미지 파일은 저장소에 커밋하지 않는다.
 
 version: 1
 
 images:
   outer_vm: Rocky Linux 9 Minimal ISO
-  inner_instance: Rocky Linux 9 GenericCloud qcow2
+  inner_instance: Rocky Linux 9 / Ubuntu 24.04 GenericCloud qcow2
 
 networks:
   management:
@@ -22,7 +22,7 @@ networks:
     gateway: 172.16.8.2
     dhcp_range: 172.16.8.151-172.16.8.239
     dhcp_server: control
-    purpose: 인스턴스 네트워크와 외부 인터넷 연결
+    purpose: 인스턴스 통신, 외부 인터넷 경로, 공유 스토리지와 HTTPS 접속
 
 nodes:
   control:

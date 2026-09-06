@@ -1,4 +1,4 @@
-"""SQLAlchemy engine과 요청 단위 database session."""
+"""SQLAlchemy 연결과 HTTP 요청 단위의 DB 세션 관리."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 class Base(DeclarativeBase):
-    """모든 ORM model이 공유하는 metadata root."""
+    """모든 ORM 모델이 공유하는 테이블 메타데이터의 기준 클래스."""
 
 
 def get_session() -> Generator[Session, None, None]:

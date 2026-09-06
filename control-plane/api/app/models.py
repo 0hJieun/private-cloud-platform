@@ -1,4 +1,4 @@
-"""MariaDB에 저장하는 private-cloud control-plane 상태 model."""
+"""MariaDB에 저장하는 사용자·VM·작업·이력 모델."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ class ComputeNode(Base):
 
 
 class Instance(Base):
-    """한 VM의 desired state와 실제 배치·IP·오류 결과를 보관한다."""
+    """한 VM의 요청 상태와 실제 배치·IP·오류 결과를 보관한다."""
 
     __tablename__ = "instances"
 

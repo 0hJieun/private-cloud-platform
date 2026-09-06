@@ -1,4 +1,4 @@
-"""인증된 사용자의 요청을 durable operation으로 기록하는 control API."""
+"""인증된 사용자 요청을 MariaDB의 비동기 작업으로 기록하는 제어 API."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ from app.security import hash_password, ssh_fingerprint, verify_password
 app = FastAPI(
     title="Private Cloud Control API",
     version="0.2.0",
-    description="사용자·SSH 키·인스턴스 요청을 MariaDB에 기록하고 worker에 전달하는 control-plane API",
+    description="사용자·SSH 키·VM 요청을 MariaDB에 기록하고 작업 처리기에 전달하는 API",
 )
 app.add_middleware(
     SessionMiddleware,
@@ -86,7 +86,7 @@ def instance_read(
     node_observations: Optional[dict[str, str]] = None,
     instance_observations: Optional[dict[str, str]] = None,
 ) -> InstanceRead:
-    """외부 API에는 UUID 대신 운영자가 읽을 수 있는 식별자를 보인다.
+    """외부 API에는 UUID와 함께 운영자가 읽을 수 있는 이름을 보인다.
 
     일반 member는 ownership filter를 거친 자신의 instance만 조회한다. admin 화면에는
     '어느 사용자가 어느 compute에 무엇을 배치했는지'가 필요하므로 owner username도

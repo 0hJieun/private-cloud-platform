@@ -3,6 +3,6 @@ uvicorn[standard]>=0.30,<1.0
 SQLAlchemy>=2.0,<2.1
 PyMySQL>=1.1,<2.0
 alembic>=1.14,<2.0
-# Rocky 9의 Python 3.9 환경에서 제공되는 안정 pwdlib series다.
+# Rocky 9의 Python 3.9와 호환되는 pwdlib 버전 범위다.
 pwdlib[argon2]>=0.2,<0.3
 itsdangerous>=2.2,<3.0

@@ -101,7 +101,7 @@
   "tags": ["private-cloud", "nodes"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
-  "title": "Private Cloud Node Overview",
+  "title": "프라이빗 클라우드 · 기반 노드 현황",
   "uid": "private-cloud-nodes",
   "version": 8
 }

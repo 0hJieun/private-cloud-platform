@@ -1,4 +1,4 @@
-"""default new instance monitoring to enabled
+"""신규 VM의 모니터링 기본값 활성화
 
 Revision ID: 0004_default_monitoring
 Revises: 0003_instance_enrollment

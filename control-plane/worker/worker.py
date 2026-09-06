@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""MariaDB operation queue를 실제 scheduler·Ansible 실행으로 연결하는 worker.
+"""MariaDB 작업 큐를 스케줄러·Ansible 실행으로 연결하는 작업 처리기.
 
-API는 빠르게 DB에 PENDING 요청만 저장한다. 이 독립 process가 한 건씩 꺼내
+API는 빠르게 DB에 PENDING 요청만 저장한다. 이 독립 프로세스가 한 건씩 꺼내
 compute를 선택하고 Ansible을 호출한다. HTTP 요청이 끊기거나 웹 서버가 재시작되어도
 작업 기록은 MariaDB에 남기 때문에 상태를 추적할 수 있다.
 """
@@ -113,18 +113,18 @@ def runtime_inventory_payload(instances: list[Instance]) -> dict:
 
 
 def runtime_ssh_config_payload(inventory: dict) -> str:
-    """runtime inventory와 같은 desired state에서 `ssh <instance-name>` 별칭을 만든다.
+    """동적 인벤토리와 같은 DB 상태에서 `ssh <instance-name>` 별칭을 만든다.
 
     Ansible inventory와 OpenSSH config는 서로 다른 소비자라 하나가 다른 하나를 직접
-    읽지는 않는다. 같은 worker 동기화 지점에서 둘을 함께 갱신해야 DHCP IP 변경과
-    인스턴스 삭제 뒤에도 별칭이 오래된 주소를 가리키지 않는다.
+    읽지는 않는다. VM 생성·삭제와 worker 시작 시 두 파일을 함께 갱신한다.
+    이미 실행 중인 VM의 임의 IP 변경까지 상시 추적하는 기능은 아니다.
     """
 
     hosts = inventory["instances"]["hosts"]
     hostvars = inventory["_meta"]["hostvars"]
     lines = [
         "# Private Cloud worker가 생성한 inner VM SSH 별칭입니다.",
-        "# 수동 편집하지 마세요. VM 생성·삭제·IP 변경 시 worker가 다시 만듭니다.",
+        "# 수동 편집하지 마세요. VM 생성·삭제 및 worker 시작 시 DB 기준으로 갱신합니다.",
         "",
     ]
     for name in hosts:

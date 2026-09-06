@@ -1,8 +1,8 @@
 groups:
   - name: private-cloud.infrastructure
     rules:
-      # compute 장애는 해당 hypervisor에서 동작하던 VM까지 영향을 받으므로 critical로
-      # 분류한다. 순간적인 연결 실패를 제외하려고 30초 지속 뒤 firing한다.
+      # compute 장애는 해당 호스트의 VM에도 영향을 줄 수 있어 critical로 분류한다.
+      # 순간적인 연결 실패를 제외하려고 30초 지속 뒤 알린다.
       - alert: ComputeNodeDown
         expr: up{job="node",role="compute"} == 0
         for: 30s
@@ -10,11 +10,11 @@ groups:
           severity: critical
           scope: infrastructure
         annotations:
-          summary: "Compute node {{ $labels.node }} is unreachable"
-          description: "Prometheus의 {{ $labels.node }} node exporter 수집 실패 상태가 30초 이상 지속됐습니다. 해당 hypervisor의 VM 상태를 확인하세요."
+          summary: "컴퓨트 {{ $labels.node }}의 지표 수집 연결 이상"
+          description: "Prometheus가 {{ $labels.node }}의 node exporter를 30초 이상 수집하지 못했습니다. 해당 호스트와 VM 상태를 확인하세요."
 
-      # replica 2는 한 storage 장애에도 사본 하나가 남지만, redundancy가 사라진
-      # degraded 상태다. 즉시 paging보다 warning으로 알리고 복구·heal을 유도한다.
+      # 수집 실패만으로 데이터 복제 상태를 단정하지 않는다.
+      # warning으로 알리고 노드 연결·복제본·복구 후 동기화를 확인하도록 안내한다.
       - alert: StorageNodeDown
         expr: up{job="node",role="storage"} == 0
         for: 30s
@@ -22,8 +22,8 @@ groups:
           severity: warning
           scope: storage
         annotations:
-          summary: "Storage node {{ $labels.node }} is unreachable"
-          description: "GlusterFS replica가 degraded 상태일 수 있습니다. 노드 복구 뒤 gluster volume heal 상태를 확인하세요."
+          summary: "스토리지 {{ $labels.node }}의 지표 수집 연결 이상"
+          description: "노드 연결과 GlusterFS 복제본 상태를 점검하세요. 노드 복구 뒤 gluster volume heal 명령으로 동기화 상태를 확인하세요."
 
       - alert: ManagedInstanceExporterDown
         expr: up{job="instance"} == 0
@@ -32,8 +32,8 @@ groups:
           severity: warning
           scope: guest
         annotations:
-          summary: "Managed instance {{ $labels.cloud_instance_name }} exporter is unreachable"
-          description: "VM 전원, 네트워크, firewalld 또는 node_exporter 서비스를 확인하세요. 이 경보는 guest exporter 연결 상태를 의미합니다."
+          summary: "VM {{ $labels.cloud_instance_name }}의 지표 수집 연결 이상"
+          description: "VM 전원, 네트워크, 방화벽 또는 node_exporter 서비스를 확인하세요. 이 경보만으로 VM 전원 상태를 단정할 수는 없습니다."
 
       - alert: GlusterBrickCapacityHigh
         expr: >-
@@ -44,5 +44,5 @@ groups:
           severity: warning
           scope: storage
         annotations:
-          summary: "Gluster brick on {{ $labels.node }} is above 85% capacity"
-          description: "Gluster brick 사용률이 10분 이상 85%를 초과했습니다. 이미지·instance overlay 용량을 점검하세요."
+          summary: "스토리지 {{ $labels.node }}의 데이터 디스크 사용률 85% 초과"
+          description: "GlusterFS 데이터 파일시스템 사용률이 10분 이상 85%를 초과했습니다. 원본 이미지와 VM 변경분 디스크 용량을 점검하세요."

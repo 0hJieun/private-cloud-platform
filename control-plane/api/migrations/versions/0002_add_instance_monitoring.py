@@ -1,4 +1,4 @@
-"""add managed instance monitoring
+"""사용자 VM의 모니터링 여부 열 추가
 
 Revision ID: 0002_add_instance_monitoring
 Revises: 0001_initial_control_plane
@@ -16,8 +16,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 기존 VM은 owner의 별도 동의 없이 exporter를 설치하거나 Prometheus target으로
-    # 등록하지 않는다. 새 요청만 portal의 monitoring_enabled 값을 명시한다.
+    # 이 버전은 기존 VM을 수집 대상으로 소급 등록하지 않는다.
+    # 신규 VM의 기본 활성화 정책은 후속 0004 마이그레이션에서 적용한다.
     op.add_column(
         "instances",
         sa.Column("monitoring_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),

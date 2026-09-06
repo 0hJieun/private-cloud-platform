@@ -112,7 +112,7 @@
     ]
   },
   "time": { "from": "now-6h", "to": "now" },
-  "title": "Private Cloud Instance Operations",
+  "title": "프라이빗 클라우드 · VM 운영 현황",
   "uid": "private-cloud-instances",
   "version": 5
 }

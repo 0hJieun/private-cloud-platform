@@ -1,6 +1,6 @@
 ---
-# 첫 인스턴스 검증용 프로비저너다. --limit으로 배치할 compute를 명시한다.
-# 이후 control-plane scheduler가 자원 기준으로 compute를 고른 뒤 같은 playbook을 호출한다.
+# worker가 스케줄러로 compute를 고른 뒤 --limit으로 대상 한 대를 지정해 호출한다.
+# 직접 실행하면 포털의 DB 작업 경로를 우회하므로 일반 VM 운영은 포털/API를 사용한다.
 - name: libvirt/KVM 인스턴스 프로비저닝
   hosts: compute_nodes
   gather_facts: false

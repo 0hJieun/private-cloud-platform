@@ -1,4 +1,4 @@
-"""initial control plane schema
+"""제어 서비스의 초기 DB 스키마 생성
 
 Revision ID: 0001_initial_control_plane
 Revises:

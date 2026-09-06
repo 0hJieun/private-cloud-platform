@@ -1,4 +1,4 @@
-"""add instance automation enrollment
+"""사용자 VM의 관리용 SSH 키 자동 편입 여부 열 추가
 
 Revision ID: 0003_instance_enrollment
 Revises: 0002_add_instance_monitoring

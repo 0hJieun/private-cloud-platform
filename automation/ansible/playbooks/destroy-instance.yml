@@ -1,5 +1,6 @@
 ---
-# cloudctl delete가 호출한다. 강제 종료를 하지 않고 guest OS의 정상 종료를 기다린다.
+# worker가 삭제 작업에서 호출한다. 강제 종료하지 않고 VM의 정상 종료를 기다린다.
+# 직접 실행하는 진단 CLI도 호출할 수 있지만 포털의 DB 상태는 갱신하지 않는다.
 - name: libvirt/KVM 인스턴스 정상 종료와 삭제
   hosts: compute_nodes
   gather_facts: false
